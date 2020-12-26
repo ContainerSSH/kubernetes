@@ -259,7 +259,7 @@ func (k *kubeExec) sendSignalToProcess(ctx context.Context, sig string) error {
 	if k.pod.config.Pod.DisableAgent {
 		return fmt.Errorf("cannot send signal")
 	}
-	k.logger.Debugf("Using the podExec facility to send signal %s to pid %d...", sig, k.pid)
+	k.logger.Debugf("Using the exec facility to send signal %s to pid %d...", sig, k.pid)
 	podExec, err := k.pod.createExec(
 		ctx, []string{
 			k.pod.config.Pod.AgentPath,
@@ -438,7 +438,7 @@ func (k *kubePod) createExec(
 		Resource("pods").
 		Name(k.pod.Name).
 		Namespace(k.pod.Namespace).
-		SubResource("podExec")
+		SubResource("exec")
 	req.VersionedParams(
 		&core.PodExecOptions{
 			Container: k.pod.Spec.Containers[k.config.Pod.ConsoleContainerNumber].Name,
