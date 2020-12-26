@@ -19,6 +19,8 @@ import (
 )
 
 func TestSuccessfulHandshakeShouldCreatePod(t *testing.T) {
+	t.Parallel()
+
 	config := Config{}
 	structutils.Defaults(&config)
 
@@ -63,6 +65,8 @@ func TestSuccessfulHandshakeShouldCreatePod(t *testing.T) {
 }
 
 func TestSingleSessionShouldRunProgram(t *testing.T) {
+	t.Parallel()
+
 	config := Config{}
 	err := defaults.Set(&config)
 	assert.Nil(t, err, "failed to set defaults (%v)", err)
@@ -121,6 +125,8 @@ func TestSingleSessionShouldRunProgram(t *testing.T) {
 }
 
 func TestCommandExecutionShouldReturnStatusCode(t *testing.T) {
+	t.Parallel()
+
 	config := Config{}
 	err := defaults.Set(&config)
 	assert.Nil(t, err, "failed to set defaults (%v)", err)

@@ -25,6 +25,7 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/remotecommand"
 	watchTools "k8s.io/client-go/tools/watch"
+	"k8s.io/client-go/util/exec"
 )
 
 type kubeClientFactory struct {
@@ -202,6 +203,7 @@ type pushSizeQueue interface {
 	remotecommand.TerminalSizeQueue
 
 	Push(remotecommand.TerminalSize)
+	Stop()
 }
 
 type sizeQueue struct {
@@ -218,6 +220,10 @@ func (s *sizeQueue) Next() *remotecommand.TerminalSize {
 		return nil
 	}
 	return &size
+}
+
+func (s *sizeQueue) Stop() {
+	close(s.resizeChan)
 }
 
 type kubePod struct {
@@ -253,8 +259,8 @@ func (k *kubeExec) sendSignalToProcess(ctx context.Context, sig string) error {
 	if k.pod.config.Pod.DisableAgent {
 		return fmt.Errorf("cannot send signal")
 	}
-	k.logger.Debugf("Using the exec facility to send signal %s to pid %d...", sig, k.pid)
-	exec, err := k.pod.createExec(
+	k.logger.Debugf("Using the podExec facility to send signal %s to pid %d...", sig, k.pid)
+	podExec, err := k.pod.createExec(
 		ctx, []string{
 			k.pod.config.Pod.AgentPath,
 			"signal",
@@ -275,7 +281,7 @@ func (k *kubeExec) sendSignalToProcess(ctx context.Context, sig string) error {
 	var stderrBytes bytes.Buffer
 	stdin, stdinWriter := io.Pipe()
 	done := make(chan struct{})
-	exec.run(
+	podExec.run(
 		&stdoutBytes, &stderrBytes, stdin, func(exitStatus int) {
 			if exitStatus != 0 {
 				err = cannotSendSignalError
@@ -363,9 +369,15 @@ func (k *kubeExec) run(stdout io.Writer, stderr io.Writer, stdin io.Reader, onEx
 	if stdoutReader != nil {
 		_ = stdoutReader.Close()
 	}
+	k.terminalSizeQueue.Stop()
 	if err != nil {
-		k.pod.logger.Errore(err)
-		onExit(137)
+		exitErr := &exec.CodeExitError{}
+		if errors.As(err, exitErr) {
+			onExit(exitErr.Code)
+		} else {
+			k.pod.logger.Errore(err)
+			onExit(137)
+		}
 	} else {
 		onExit(0)
 	}
@@ -387,14 +399,14 @@ func (k *kubePod) attach(_ context.Context) (kubernetesExecution, error) {
 		}, scheme.ParameterCodec,
 	)
 
-	exec, err := remotecommand.NewSPDYExecutor(k.connectionConfig, "POST", req.URL())
+	podExec, err := remotecommand.NewSPDYExecutor(k.connectionConfig, "POST", req.URL())
 	if err != nil {
 		return nil, err
 	}
 
 	return &kubeExec{
 		pod:  k,
-		exec: exec,
+		exec: podExec,
 		terminalSizeQueue: &sizeQueue{
 			resizeChan: make(chan remotecommand.TerminalSize),
 		},
@@ -426,7 +438,7 @@ func (k *kubePod) createExec(
 		Resource("pods").
 		Name(k.pod.Name).
 		Namespace(k.pod.Namespace).
-		SubResource("exec")
+		SubResource("podExec")
 	req.VersionedParams(
 		&core.PodExecOptions{
 			Container: k.pod.Spec.Containers[k.config.Pod.ConsoleContainerNumber].Name,
@@ -439,7 +451,7 @@ func (k *kubePod) createExec(
 		scheme.ParameterCodec,
 	)
 
-	exec, err := remotecommand.NewSPDYExecutor(
+	podExec, err := remotecommand.NewSPDYExecutor(
 		k.connectionConfig,
 		"POST",
 		req.URL(),
@@ -450,7 +462,7 @@ func (k *kubePod) createExec(
 
 	return &kubeExec{
 		pod:  k,
-		exec: exec,
+		exec: podExec,
 		terminalSizeQueue: &sizeQueue{
 			resizeChan: make(chan remotecommand.TerminalSize),
 		},
