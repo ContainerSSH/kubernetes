@@ -1,14 +1,11 @@
 package kubernetes
 
 import (
-	"sync"
-
 	"github.com/containerssh/sshserver"
 )
 
 type sshConnectionHandler struct {
 	networkHandler *networkHandler
-	mutex          *sync.Mutex
 	username       string
 }
 

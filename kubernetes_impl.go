@@ -310,13 +310,17 @@ func (k *kubeExec) resize(_ context.Context, height uint, width uint) error {
 }
 
 func (k *kubeExec) run(stdout io.Writer, stderr io.Writer, stdin io.Reader, onExit func(exitStatus int)) {
-	var stdinWriter io.WriteCloser
-	var stdoutReader io.ReadCloser
 	if !k.pod.config.Pod.DisableAgent {
+		var stdinWriter io.WriteCloser
+		var stdoutReader io.ReadCloser
 		originalStdin := stdin
 		originalStdout := stdout
 		stdin, stdinWriter = io.Pipe()
 		stdoutReader, stdout = io.Pipe()
+		defer func() {
+			_ = stdinWriter.Close()
+			_ = stdoutReader.Close()
+		}()
 		go func() {
 			if k.pod.config.Pod.Mode == ExecutionModeSession {
 				// Start the program. See https://github.com/containerssh/agent for details.
@@ -348,7 +352,11 @@ func (k *kubeExec) run(stdout io.Writer, stderr io.Writer, stdin io.Reader, onEx
 			}()
 		}()
 	}
-	var tty = false
+	k.handleStream(stdout, stderr, stdin, onExit)
+}
+
+func (k *kubeExec) handleStream(stdout io.Writer, stderr io.Writer, stdin io.Reader, onExit func(exitStatus int)) {
+	var tty bool
 	if k.pod.config.Pod.Mode == ExecutionModeSession {
 		tty = *k.pod.tty
 	} else {
@@ -363,12 +371,7 @@ func (k *kubeExec) run(stdout io.Writer, stderr io.Writer, stdin io.Reader, onEx
 			TerminalSizeQueue: k.terminalSizeQueue,
 		},
 	)
-	if stdinWriter != nil {
-		_ = stdinWriter.Close()
-	}
-	if stdoutReader != nil {
-		_ = stdoutReader.Close()
-	}
+
 	k.terminalSizeQueue.Stop()
 	if err != nil {
 		exitErr := &exec.CodeExitError{}

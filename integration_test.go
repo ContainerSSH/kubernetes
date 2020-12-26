@@ -36,15 +36,7 @@ func TestSuccessfulHandshakeShouldCreatePod(t *testing.T) {
 
 				connectionID := sshserver.GenerateConnectionID()
 
-				logger, err := log.New(
-					log.Config{
-						Level:  log.LevelDebug,
-						Format: log.FormatText,
-					},
-					"kubernetes",
-					os.Stdout,
-				)
-				assert.NoError(t, err)
+				logger := getLogger(t)
 
 				kr, err := New(
 					config, connectionID, net.TCPAddr{
@@ -86,25 +78,12 @@ func TestSingleSessionShouldRunProgram(t *testing.T) {
 			fmt.Sprintf("mode=%s", mode), func(t *testing.T) {
 				t.Parallel()
 
-				config := Config{}
-				err := defaults.Set(&config)
-				assert.Nil(t, err, "failed to set defaults (%v)", err)
-
-				err = setConfigFromKubeConfig(&config)
-				assert.Nil(t, err, "failed to set up kube config (%v)", err)
+				config := getKubernetesConfig(t)
 
 				config.Pod.Mode = mode
 
 				connectionID := sshserver.GenerateConnectionID()
-				logger, err := log.New(
-					log.Config{
-						Level:  log.LevelDebug,
-						Format: log.FormatText,
-					},
-					"kubernetes",
-					os.Stdout,
-				)
-				assert.NoError(t, err)
+				logger := getLogger(t)
 
 				kr, err := New(
 					config, connectionID, net.TCPAddr{
@@ -145,8 +124,39 @@ func TestSingleSessionShouldRunProgram(t *testing.T) {
 				assert.Equal(t, "Hello world!\n", string(stdoutBytes))
 				assert.Equal(t, "", string(stderrBytes))
 				assert.Equal(t, 0, status)
-			})
+			},
+		)
 	}
+}
+
+func getLogger(t *testing.T) log.Logger {
+	logger, err := log.New(
+		log.Config{
+			Level:  log.LevelDebug,
+			Format: log.FormatText,
+		},
+		"kubernetes",
+		os.Stdout,
+	)
+	if !assert.NoError(t, err) {
+		t.FailNow()
+	}
+	return logger
+}
+
+func getKubernetesConfig(t *testing.T) Config {
+	config := Config{}
+	err := defaults.Set(&config)
+	if !assert.Nil(t, err, "failed to set defaults (%v)", err) {
+		t.FailNow()
+	}
+
+	err = setConfigFromKubeConfig(&config)
+	if !assert.Nil(t, err, "failed to set up kube config (%v)", err) {
+		t.FailNow()
+	}
+
+	return config
 }
 
 func TestCommandExecutionShouldReturnStatusCode(t *testing.T) {
@@ -158,24 +168,12 @@ func TestCommandExecutionShouldReturnStatusCode(t *testing.T) {
 		t.Run(fmt.Sprintf("mode=%s", mode), func(t *testing.T) {
 			t.Parallel()
 
-			config := Config{}
-			structutils.Defaults(&config)
-
-			err := setConfigFromKubeConfig(&config)
-			assert.Nil(t, err, "failed to set up kube config (%v)", err)
+			config := getKubernetesConfig(t)
 
 			config.Pod.Mode = mode
 
 			connectionID := sshserver.GenerateConnectionID()
-			logger, err := log.New(
-				log.Config{
-					Level:  log.LevelDebug,
-					Format: log.FormatText,
-				},
-				"kubernetes",
-				os.Stdout,
-			)
-			assert.NoError(t, err)
+			logger := getLogger(t)
 			kr, err := New(
 				config, connectionID, net.TCPAddr{
 					IP:   net.ParseIP("127.0.0.1"),
