@@ -2,6 +2,7 @@ package kubernetes
 
 import (
 	"fmt"
+	"os"
 	"time"
 
 	v1 "k8s.io/api/core/v1"
@@ -15,7 +16,21 @@ type Config struct {
 	// Pod contains the spec and specific settings for creating the pod.
 	Pod PodConfig `json:"pod" yaml:"pod" comment:"Container configuration"`
 	// Timeout specifies how long to wait for the Pod to come up.
-	Timeouts TimeoutConfig `json:"timeouts" yaml:"timeouts" comment:"Timeout for pod creation" default:"60s"`
+	Timeouts TimeoutConfig `json:"timeouts" yaml:"timeouts" comment:"Timeout for pod creation"`
+}
+
+// Validate checks the configuration options and returns an error if the configuration is invalid.
+func (c Config) Validate() error {
+	if err := c.Connection.Validate(); err != nil {
+		return err
+	}
+	if err := c.Pod.Validate(); err != nil {
+		return err
+	}
+	if err := c.Timeouts.Validate(); err != nil {
+		return err
+	}
+	return nil
 }
 
 // ConnectionConfig configures the connection to the Kubernetes cluster.
@@ -59,25 +74,43 @@ type ConnectionConfig struct {
 	QPS float32 `json:"qps" yaml:"qps" comment:"QPS indicates the maximum QPS to the master from this client." default:"5"`
 	// Burst indicates the maximum burst for throttle.
 	Burst int `json:"burst" yaml:"burst" comment:"Maximum burst for throttle." default:"10"`
-	// Timeout indicates the timeout for client calls.
-	Timeout time.Duration `json:"timeout" yaml:"timeout" comment:"Timeout"`
+}
+
+func (c ConnectionConfig) Validate() error {
+	if c.Host == "" {
+		return fmt.Errorf("no host specified")
+	}
+	if c.APIPath == "" {
+		return fmt.Errorf("no API path specified")
+	}
+	if c.BearerTokenFile != "" {
+		if _, err := os.Stat(c.BearerTokenFile); err != nil {
+			return fmt.Errorf("bearer token file %s not found (%w)", c.BearerTokenFile, err)
+		}
+	}
+	return nil
 }
 
 // PodConfig describes the pod to launch.
 type PodConfig struct {
-	Metadata metav1.ObjectMeta `json:"metadata,omitempty" yaml:"metadata,omitempty" default:"{\"namespace\":\"default\",\"generator\":\"containerssh-\"}"`
+	// Metadata configures the pod metadata.
+	Metadata metav1.ObjectMeta `json:"metadata,omitempty" yaml:"metadata,omitempty" default:"{\"namespace\":\"default\",\"generateName\":\"containerssh-\"}"`
 	// Spec contains the pod specification to launch.
 	Spec v1.PodSpec `json:"podSpec" yaml:"podSpec" comment:"Pod specification to launch" default:"{\"containers\":[{\"name\":\"shell\",\"image\":\"containerssh/containerssh-guest-image\"}]}"`
 
 	// ConsoleContainerNumber specifies the container to attach the running process to. Defaults to 0.
 	ConsoleContainerNumber int `json:"consoleContainerNumber" yaml:"consoleContainerNumber" comment:"Which container to attach the SSH connection to" default:"0"`
-	// Subsystems contains a map of subsystem names and the executable to launch.
-	Subsystems map[string]string `json:"subsystems" yaml:"subsystems" comment:"Subsystem names and binaries map." default:"{\"sftp\":\"/usr/lib/openssh/sftp-server\"}"`
 
 	// IdleCommand contains the command to run as the first process in the container. Other commands are executed using the "exec" method.
 	IdleCommand []string `json:"idleCommand" yaml:"idleCommand" comment:"Run this command to wait for container exit" default:"[\"/bin/sh\", \"-c\", \"sleep infinity & PID=$!; trap \\\"kill $PID\\\" INT TERM; wait\"]"`
 	// ShellCommand is the command used for launching shells when the container is in ExecutionModeConnection. Ignored in ExecutionModeSession.
 	ShellCommand []string `json:"shellCommand" yaml:"shellCommand" comment:"Run this command as a default shell." default:"[\"/bin/bash\"]"`
+	// AgentPath contains the path to the ContainerSSH Guest Agent.
+	AgentPath string `json:"agentPath" yaml:"agentPath" default:"/usr/bin/containerssh-agent"`
+	// DisableAgent enables using the ContainerSSH Guest Agent.
+	DisableAgent bool `json:"disableAgent" yaml:"disableAgent"`
+	// Subsystems contains a map of subsystem names and the executable to launch.
+	Subsystems map[string]string `json:"subsystems" yaml:"subsystems" comment:"Subsystem names and binaries map." default:"{\"sftp\":\"/usr/lib/openssh/sftp-server\"}"`
 
 	// Mode influences how commands are executed.
 	//
@@ -95,15 +128,67 @@ type PodConfig struct {
 	disableCommand bool
 }
 
+// Validate validates the pod configuration.
+func (c PodConfig) Validate() error {
+	if c.Metadata.Namespace == "" {
+		return fmt.Errorf("no namespace specified in pod config")
+	}
+	if c.ConsoleContainerNumber >= len(c.Spec.Containers) {
+		return fmt.Errorf("the specified container for consoles does not exist in the pod spec")
+	}
+	if !c.DisableAgent {
+		if c.AgentPath == "" {
+			return fmt.Errorf("the agent path is required when the agent is not disabled")
+		}
+	}
+	if len(c.Spec.Containers) == 0 {
+		return fmt.Errorf("no containers specified in the pod spec")
+	}
+	for i, container := range c.Spec.Containers {
+		if container.Image == "" {
+			return fmt.Errorf("container %d in pod spec has no image name", i)
+		}
+	}
+	if err := c.Mode.Validate(); err != nil {
+		return err
+	}
+	if c.Mode == ExecutionModeConnection {
+		if len(c.IdleCommand) == 0 {
+			return fmt.Errorf("idle command is required when the execution mode is connection")
+		}
+		if len(c.ShellCommand) == 0 {
+			return fmt.Errorf("shell command is required when the execution mode is connection")
+		}
+	} else if c.Mode == ExecutionModeSession {
+		if c.Spec.RestartPolicy != "" && c.Spec.RestartPolicy != v1.RestartPolicyNever {
+			return fmt.Errorf(
+				"invalid restart policy in session mode: %s only \"Never\" is allowed",
+				c.Spec.RestartPolicy,
+			)
+		}
+	}
+	return nil
+}
+
+// TimeoutConfig configures the various timeouts for the Kubernetes backend.
 type TimeoutConfig struct {
-	// HTTP configures the timeout for HTTP calls
-	HTTP time.Duration `json:"http" yaml:"http" default:"15s"`
 	// PodStart is the timeout for creating and starting the pod.
 	PodStart time.Duration `json:"podStart" yaml:"podStart" default:"60s"`
 	// PodStop is the timeout for stopping and removing the pod.
 	PodStop time.Duration `json:"podStop" yaml:"podStop" default:"60s"`
 	// CommandStart sets the maximum time starting a command may take.
 	CommandStart time.Duration `json:"commandStart" yaml:"commandStart" default:"60s"`
+	// Signal sets the maximum time sending a signal may take.
+	Signal time.Duration `json:"signal" yaml:"signal" default:"60s"`
+	// Signal sets the maximum time setting the window size may take.
+	Window time.Duration `json:"window" yaml:"window" default:"60s"`
+	// HTTP configures the timeout for HTTP calls
+	HTTP time.Duration `json:"http" yaml:"http" default:"15s"`
+}
+
+// Validate validates the timeout configuration.
+func (c TimeoutConfig) Validate() error {
+	return nil
 }
 
 // ExecutionMode determines when a container is launched.

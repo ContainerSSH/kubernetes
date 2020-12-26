@@ -44,7 +44,12 @@ type kubernetesPod interface {
 
 // kubernetesExecution is an execution process on either an "exec" process or attached to the main console of a Pod.
 type kubernetesExecution interface {
+	// resize resizes the current terminal to the given dimensions.
 	resize(ctx context.Context, height uint, width uint) error
+	// signal sends the given signal to the currently running process. Returns an error if the process is not running,
+	// the signal is not known or permitted, or the process ID is not known.
+	signal(ctx context.Context, sig string) error
+	// run runs the process in question.
 	run(
 		stdout io.Writer,
 		stderr io.Writer,

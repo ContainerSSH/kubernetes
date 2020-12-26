@@ -1,16 +1,19 @@
 package kubernetes
 
 import (
+	"bytes"
 	"context"
+	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
+	"strconv"
 	"time"
 
 	"github.com/containerssh/log"
 	"github.com/containerssh/structutils"
 	core "k8s.io/api/core/v1"
-	errors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/apis/meta/v1"
+	kubeErrors "k8s.io/apimachinery/pkg/api/errors"
 	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -28,7 +31,7 @@ type kubeClientFactory struct {
 }
 
 func (f *kubeClientFactory) get(
-	ctx context.Context,
+	_ context.Context,
 	config Config,
 	logger log.Logger,
 ) (kubernetesClient, error) {
@@ -58,7 +61,7 @@ func createConnectionConfig(config Config) restclient.Config {
 		Host:    config.Connection.Host,
 		APIPath: config.Connection.APIPath,
 		ContentConfig: restclient.ContentConfig{
-			GroupVersion:         &v1.SchemeGroupVersion,
+			GroupVersion:         &core.SchemeGroupVersion,
 			NegotiatedSerializer: scheme.Codecs.WithoutConversion(),
 		},
 		Username:        config.Connection.Username,
@@ -151,14 +154,34 @@ func (k *kubeClient) getPodConfig(tty *bool, cmd []string, labels map[string]str
 	error,
 ) {
 	var podConfig PodConfig
-	if err := structutils.Copy(podConfig, k.config.Pod); err != nil {
+	if err := structutils.Copy(&podConfig, k.config.Pod); err != nil {
 		return PodConfig{}, err
 	}
 
-	if tty != nil {
-		podConfig.Spec.Containers[k.config.Pod.ConsoleContainerNumber].Command = cmd
+	if podConfig.Mode == ExecutionModeSession {
+		if tty != nil {
+			podConfig.Spec.Containers[k.config.Pod.ConsoleContainerNumber].TTY = *tty
+		}
+		if !podConfig.DisableAgent {
+			podConfig.Spec.Containers[k.config.Pod.ConsoleContainerNumber].Command = append(
+				[]string{
+					podConfig.AgentPath,
+					"console",
+					"--wait",
+					"--pid",
+					"--",
+				},
+				cmd...,
+			)
+		} else {
+			podConfig.Spec.Containers[k.config.Pod.ConsoleContainerNumber].Command = cmd
+		}
 	} else {
 		podConfig.Spec.Containers[k.config.Pod.ConsoleContainerNumber].Command = k.config.Pod.IdleCommand
+	}
+
+	if podConfig.Metadata.Labels == nil {
+		podConfig.Metadata.Labels = map[string]string{}
 	}
 	for k, v := range labels {
 		podConfig.Metadata.Labels[k] = v
@@ -211,28 +234,140 @@ type kubeExec struct {
 	pod               *kubePod
 	exec              remotecommand.Executor
 	terminalSizeQueue pushSizeQueue
+	logger            log.Logger
+	tty               bool
+	pid               int
+	env               map[string]string
 }
 
-func (k *kubeExec) resize(ctx context.Context, height uint, width uint) error {
+var cannotSendSignalError = errors.New("cannot send signal")
+
+func (k *kubeExec) signal(ctx context.Context, sig string) error {
+	if k.pid <= 0 {
+		return cannotSendSignalError
+	}
+	return k.sendSignalToProcess(ctx, sig)
+}
+
+func (k *kubeExec) sendSignalToProcess(ctx context.Context, sig string) error {
+	if k.pod.config.Pod.DisableAgent {
+		return fmt.Errorf("cannot send signal")
+	}
+	k.logger.Debugf("Using the exec facility to send signal %s to pid %d...", sig, k.pid)
+	exec, err := k.pod.createExec(
+		ctx, []string{
+			k.pod.config.Pod.AgentPath,
+			"signal",
+			"--pid",
+			strconv.Itoa(k.pid),
+			"--signal",
+			sig,
+		}, map[string]string{}, false,
+	)
+	if err != nil {
+		k.logger.Errorf(
+			"cannot send %s signal to pod %s pid %d (%v)",
+			sig, k.pod.pod.Name, k.pid, err,
+		)
+		return cannotSendSignalError
+	}
+	var stdoutBytes bytes.Buffer
+	var stderrBytes bytes.Buffer
+	stdin, stdinWriter := io.Pipe()
+	done := make(chan struct{})
+	exec.run(
+		&stdoutBytes, &stderrBytes, stdin, func(exitStatus int) {
+			if exitStatus != 0 {
+				err = cannotSendSignalError
+				k.logger.Errorf(
+					"cannot send %s signal to pod %s pid %d (%s)",
+					sig, k.pod.pod.Name, k.pid, stderrBytes,
+				)
+			}
+			done <- struct{}{}
+		},
+	)
+	<-done
+	_ = stdinWriter.Close()
+	return err
+}
+
+func (k *kubeExec) resize(_ context.Context, height uint, width uint) error {
 	//TODO handle ctx
-	k.terminalSizeQueue.Push(remotecommand.TerminalSize{
-		Width:  uint16(width),
-		Height: uint16(height),
-	})
+	k.terminalSizeQueue.Push(
+		remotecommand.TerminalSize{
+			Width:  uint16(width),
+			Height: uint16(height),
+		},
+	)
 	return nil
 }
 
 func (k *kubeExec) run(stdout io.Writer, stderr io.Writer, stdin io.Reader, onExit func(exitStatus int)) {
-	err := k.exec.Stream(remotecommand.StreamOptions{
-		Stdin:             stdin,
-		Stdout:            stdout,
-		Stderr:            stderr,
-		Tty:               *k.pod.tty,
-		TerminalSizeQueue: k.terminalSizeQueue,
-	})
+	var stdinWriter io.WriteCloser
+	var stdoutReader io.ReadCloser
+	if !k.pod.config.Pod.DisableAgent {
+		originalStdin := stdin
+		originalStdout := stdout
+		stdin, stdinWriter = io.Pipe()
+		stdoutReader, stdout = io.Pipe()
+		go func() {
+			if k.pod.config.Pod.Mode == ExecutionModeSession {
+				// Start the program. See https://github.com/containerssh/agent for details.
+				if _, err := stdinWriter.Write([]byte("\000")); err != nil {
+					k.logger.Warningf("failed to start program (%v)", err)
+				}
+			}
+			// Read the pid. See https://github.com/containerssh/agent for details.
+			pidBytes := make([]byte, 4)
+			if _, err := stdoutReader.Read(pidBytes); err != nil {
+				k.logger.Warningf("failed to read PID from program (%v)", err)
+			} else {
+				k.pid = int(binary.LittleEndian.Uint32(pidBytes))
+			}
+
+			go func() {
+				if _, err := io.Copy(originalStdout, stdoutReader); err != nil {
+					if !errors.Is(err, io.ErrClosedPipe) {
+						k.logger.Warningf("failed to read from stdout (%v)", err)
+					}
+				}
+			}()
+			go func() {
+				if _, err := io.Copy(stdinWriter, originalStdin); err != nil {
+					if !errors.Is(err, io.ErrClosedPipe) {
+						k.logger.Warningf("failed to read from stdin (%v)", err)
+					}
+				}
+			}()
+		}()
+	}
+	var tty = false
+	if k.pod.config.Pod.Mode == ExecutionModeSession {
+		tty = *k.pod.tty
+	} else {
+		tty = k.tty
+	}
+	err := k.exec.Stream(
+		remotecommand.StreamOptions{
+			Stdin:             stdin,
+			Stdout:            stdout,
+			Stderr:            stderr,
+			Tty:               tty,
+			TerminalSizeQueue: k.terminalSizeQueue,
+		},
+	)
+	if stdinWriter != nil {
+		_ = stdinWriter.Close()
+	}
+	if stdoutReader != nil {
+		_ = stdoutReader.Close()
+	}
 	if err != nil {
 		k.pod.logger.Errore(err)
 		onExit(137)
+	} else {
+		onExit(0)
 	}
 }
 
@@ -242,13 +377,15 @@ func (k *kubePod) attach(_ context.Context) (kubernetesExecution, error) {
 		Resource("pods").
 		Name(k.pod.Name).
 		SubResource("attach")
-	req.VersionedParams(&core.PodAttachOptions{
-		Container: k.pod.Spec.Containers[k.config.Pod.ConsoleContainerNumber].Name,
-		Stdin:     true,
-		Stdout:    true,
-		Stderr:    !*k.tty,
-		TTY:       *k.tty,
-	}, scheme.ParameterCodec)
+	req.VersionedParams(
+		&core.PodAttachOptions{
+			Container: k.pod.Spec.Containers[k.config.Pod.ConsoleContainerNumber].Name,
+			Stdin:     true,
+			Stdout:    true,
+			Stderr:    !*k.tty,
+			TTY:       *k.tty,
+		}, scheme.ParameterCodec,
+	)
 
 	exec, err := remotecommand.NewSPDYExecutor(k.connectionConfig, "POST", req.URL())
 	if err != nil {
@@ -261,6 +398,8 @@ func (k *kubePod) attach(_ context.Context) (kubernetesExecution, error) {
 		terminalSizeQueue: &sizeQueue{
 			resizeChan: make(chan remotecommand.TerminalSize),
 		},
+		logger: k.logger,
+		tty:    *k.tty,
 	}, nil
 }
 
@@ -270,6 +409,19 @@ func (k *kubePod) createExec(
 	env map[string]string,
 	tty bool,
 ) (kubernetesExecution, error) {
+	if !k.config.Pod.DisableAgent {
+		newProgram := []string{
+			k.config.Pod.AgentPath,
+			"console",
+			"--pid",
+		}
+		for envKey, envValue := range env {
+			newProgram = append(newProgram, "--env", fmt.Sprintf("%s=%s", envKey, envValue))
+		}
+		newProgram = append(newProgram, "--")
+		program = append(newProgram, program...)
+	}
+
 	req := k.restClient.Post().
 		Resource("pods").
 		Name(k.pod.Name).
@@ -302,6 +454,9 @@ func (k *kubePod) createExec(
 		terminalSizeQueue: &sizeQueue{
 			resizeChan: make(chan remotecommand.TerminalSize),
 		},
+		logger: k.logger,
+		env:    env,
+		tty:    tty,
 	}, nil
 }
 
@@ -309,14 +464,7 @@ func (k *kubePod) remove(ctx context.Context) error {
 	var lastError error
 loop:
 	for {
-		request := k.restClient.
-			Delete().
-			Namespace(k.pod.Namespace).
-			Resource("pods").
-			Name(k.pod.Name).
-			Body(&meta.DeleteOptions{})
-		result := request.Do(ctx)
-		lastError = result.Error()
+		lastError = k.client.CoreV1().Pods(k.pod.Namespace).Delete(ctx, k.pod.Name, meta.DeleteOptions{})
 		if lastError == nil {
 			return nil
 		}
@@ -375,7 +523,7 @@ func (k *kubePod) wait(ctx context.Context) (kubernetesPod, error) {
 
 func (k *kubePod) isPodAvailableEvent(event watch.Event) (bool, error) {
 	if event.Type == watch.Deleted {
-		return false, errors.NewNotFound(schema.GroupResource{Resource: "pods"}, "")
+		return false, kubeErrors.NewNotFound(schema.GroupResource{Resource: "pods"}, "")
 	}
 
 	switch eventObject := event.Object.(type) {

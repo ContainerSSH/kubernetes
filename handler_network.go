@@ -8,9 +8,6 @@ import (
 
 	"github.com/containerssh/log"
 	"github.com/containerssh/sshserver"
-	core "k8s.io/api/core/v1"
-	"k8s.io/client-go/kubernetes"
-	restclient "k8s.io/client-go/rest"
 )
 
 type networkHandler struct {
@@ -19,24 +16,18 @@ type networkHandler struct {
 	connectionID string
 	config       Config
 
-	// onDisconnect contains a per-channel disconnect handler
-	onDisconnect map[uint64]func()
-	onShutdown   map[uint64]func(shutdownContext context.Context)
-
-	cli              *kubernetes.Clientset
-	restClient       *restclient.RESTClient
-	pod              *core.Pod
-	cancelStart      func()
-	labels           map[string]string
-	logger           log.Logger
-	restClientConfig restclient.Config
+	cli          kubernetesClient
+	pod          kubernetesPod
+	logger       log.Logger
+	disconnected bool
+	labels       map[string]string
 }
 
 func (n *networkHandler) OnAuthPassword(_ string, _ []byte) (response sshserver.AuthResponse, reason error) {
 	return sshserver.AuthResponseUnavailable, fmt.Errorf("the backend handler does not support authentication")
 }
 
-func (n *networkHandler) OnAuthPubKey(_ string, _ []byte) (response sshserver.AuthResponse, reason error) {
+func (n *networkHandler) OnAuthPubKey(_ string, _ string) (response sshserver.AuthResponse, reason error) {
 	return sshserver.AuthResponseUnavailable, fmt.Errorf("the backend handler does not support authentication")
 }
 
@@ -51,9 +42,8 @@ func (n *networkHandler) OnHandshakeSuccess(username string) (connection sshserv
 	}
 
 	ctx, cancelFunc := context.WithTimeout(context.Background(), n.config.Timeouts.PodStart)
-	n.cancelStart = cancelFunc
 	defer func() {
-		n.cancelStart = nil
+		cancelFunc()
 		n.mutex.Unlock()
 	}()
 
@@ -66,6 +56,13 @@ func (n *networkHandler) OnHandshakeSuccess(username string) (connection sshserv
 		"containerssh_username":      username,
 	}
 
+	var err error
+	if n.config.Pod.Mode == ExecutionModeConnection {
+		if n.pod, err = n.cli.createPod(ctx, n.labels, nil, nil, nil); err != nil {
+			return nil, err
+		}
+	}
+
 	return &sshConnectionHandler{
 		networkHandler: n,
 		username:       username,
@@ -73,5 +70,13 @@ func (n *networkHandler) OnHandshakeSuccess(username string) (connection sshserv
 }
 
 func (n *networkHandler) OnDisconnect() {
-
+	n.disconnected = true
+	ctx, cancelFunc := context.WithTimeout(context.Background(), n.config.Timeouts.PodStop)
+	defer cancelFunc()
+	n.mutex.Lock()
+	if n.pod != nil {
+		_ = n.pod.remove(ctx)
+		n.pod = nil
+		n.mutex.Unlock()
+	}
 }

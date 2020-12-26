@@ -1,7 +1,6 @@
 package kubernetes
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"fmt"
@@ -11,6 +10,7 @@ import (
 
 	"github.com/containerssh/log"
 	"github.com/containerssh/sshserver"
+	"github.com/containerssh/structutils"
 	"github.com/creasty/defaults"
 	"github.com/stretchr/testify/assert"
 	v1Api "k8s.io/api/core/v1"
@@ -20,10 +20,7 @@ import (
 
 func TestSuccessfulHandshakeShouldCreatePod(t *testing.T) {
 	config := Config{}
-	err := defaults.Set(&config)
-	assert.Nil(t, err, "failed to set defaults (%v)", err)
-
-	config.Pod.Spec.Containers[0].Image = "docker.io/library/busybox"
+	structutils.Defaults(&config)
 
 	if err := setConfigFromKubeConfig(&config); err != nil {
 		assert.FailNow(t, "failed to create configuration from the current users kubeconfig (%v)", err)
@@ -70,8 +67,6 @@ func TestSingleSessionShouldRunProgram(t *testing.T) {
 	err := defaults.Set(&config)
 	assert.Nil(t, err, "failed to set defaults (%v)", err)
 
-	config.Pod.Spec.Containers[0].Image = "docker.io/library/busybox"
-
 	err = setConfigFromKubeConfig(&config)
 	assert.Nil(t, err, "failed to set up kube config (%v)", err)
 
@@ -101,10 +96,8 @@ func TestSingleSessionShouldRunProgram(t *testing.T) {
 	assert.Nil(t, err, "failed to to create session channel (%v)", err)
 
 	stdin := bytes.NewReader([]byte{})
-	var stdoutBytes bytes.Buffer
-	stdout := bufio.NewWriter(&stdoutBytes)
-	var stderrBytes bytes.Buffer
-	stderr := bufio.NewWriter(&stderrBytes)
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
 	done := make(chan struct{})
 	status := 0
 	err = channel.OnExecRequest(
@@ -120,9 +113,10 @@ func TestSingleSessionShouldRunProgram(t *testing.T) {
 	)
 	assert.Nil(t, err)
 	<-done
-	assert.Nil(t, stdout.Flush())
-	assert.Equal(t, "Hello world!\n", stdoutBytes.String())
-	assert.Equal(t, "", stderrBytes.String())
+	stdoutBytes := stdout.Bytes()
+	stderrBytes := stderr.Bytes()
+	assert.Equal(t, "Hello world!\n", string(stdoutBytes))
+	assert.Equal(t, "", string(stderrBytes))
 	assert.Equal(t, 0, status)
 }
 
@@ -130,8 +124,6 @@ func TestCommandExecutionShouldReturnStatusCode(t *testing.T) {
 	config := Config{}
 	err := defaults.Set(&config)
 	assert.Nil(t, err, "failed to set defaults (%v)", err)
-
-	config.Pod.Spec.Containers[0].Image = "docker.io/library/busybox"
 
 	err = setConfigFromKubeConfig(&config)
 	assert.Nil(t, err, "failed to set up kube config (%v)", err)
@@ -161,10 +153,8 @@ func TestCommandExecutionShouldReturnStatusCode(t *testing.T) {
 	assert.Nil(t, err, "failed to to create session channel (%v)", err)
 
 	stdin := bytes.NewReader([]byte{})
-	var stdoutBytes bytes.Buffer
-	stdout := bufio.NewWriter(&stdoutBytes)
-	var stderrBytes bytes.Buffer
-	stderr := bufio.NewWriter(&stderrBytes)
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
 	done := make(chan struct{})
 	status := 0
 	err = channel.OnExecRequest(
@@ -180,6 +170,5 @@ func TestCommandExecutionShouldReturnStatusCode(t *testing.T) {
 	)
 	assert.Nil(t, err)
 	<-done
-	assert.Nil(t, stdout.Flush())
 	assert.Equal(t, 42, status)
 }
