@@ -6,6 +6,14 @@ jobs:
   test:
     name: Run tests
     runs-on: ubuntu-latest
+    needs:
+      - test_1_18
+      - test_1_19
+    steps:
+      - run: "echo 'All tests complete'"
+  test_1_18:
+    name: Run tests against k8s 1.18
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v2
@@ -15,5 +23,23 @@ jobs:
           go-version: 1.14
       - name: Set up KinD
         uses: engineerd/setup-kind@v0.5.0
+        with:
+          image: kindest/node:v1.18.8@sha256:f4bcc97a0ad6e7abaf3f643d890add7efe6ee4ab90baeb374b4f41a4c95567eb
+      - name: Run go tests
+        run: go test -cover -p 1 -v ./...
+  test_1_19:
+    name: Run tests against k8s 1.19
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+      - name: Set up Go
+        uses: actions/setup-go@v2
+        with:
+          go-version: 1.14
+      - name: Set up KinD
+        uses: engineerd/setup-kind@v0.5.0
+        with:
+          image: kindest/node:v1.19.1@sha256:98cf5288864662e37115e362b23e4369c8c4a408f99cbc06e58ac30ddc721600
       - name: Run go tests
         run: go test -cover -p 1 -v ./...
