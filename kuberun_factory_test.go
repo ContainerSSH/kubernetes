@@ -15,6 +15,8 @@ import (
 )
 
 func TestV03Compatibility(t *testing.T) {
+	t.Parallel()
+
 	fh, err := os.Open("testdata/config-0.3.yaml")
 	if !assert.NoError(t, err) {
 		return

@@ -13,6 +13,9 @@ func New(config Config, connectionID string, client net.TCPAddr, logger log.Logg
 	if config.Pod.DisableAgent {
 		logger.Warningf("You are using the Kubernetes backend without the ContainerSSH Guest Agent. Several features will not work as expected.")
 	}
+	if config.Connection.Insecure {
+		logger.Warningf("You are connecting to your Kubernetes cluster in insecure mode. This is dangerous and highly discouraged.")
+	}
 
 	var clientFactory kubernetesClientFactory = &kubeClientFactory{}
 
