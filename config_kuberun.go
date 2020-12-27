@@ -44,5 +44,5 @@ type KubeRunPodConfig struct {
 
 	// DisableCommand is a configuration option to support legacy command disabling from the kuberun config.
 	// See https://containerssh.io/deprecations/kuberun for details.
-	DisableCommand bool
+	DisableCommand bool `json:"disableCommand" yaml:"disableCommand" comment:"DisableCommand is a configuration option to support legacy command disabling from the kuberun config."`
 }

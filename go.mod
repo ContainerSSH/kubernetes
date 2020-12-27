@@ -9,6 +9,7 @@ require (
 	github.com/containerssh/unixutils v0.9.0
 	github.com/creasty/defaults v1.5.1
 	github.com/stretchr/testify v1.6.1
+	gopkg.in/yaml.v2 v2.3.0
 	gopkg.in/yaml.v3 v3.0.0-20200313102051-9f266ea9e77c
 	k8s.io/api v0.19.4
 	k8s.io/apimachinery v0.19.4
