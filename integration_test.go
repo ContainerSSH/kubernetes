@@ -8,7 +8,9 @@ import (
 	"os"
 	"testing"
 
+	"github.com/containerssh/geoip"
 	"github.com/containerssh/log"
+	"github.com/containerssh/metrics"
 	"github.com/containerssh/sshserver"
 	"github.com/containerssh/structutils"
 	"github.com/creasty/defaults"
@@ -17,6 +19,33 @@ import (
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 )
+
+func must(t *testing.T, arg bool) {
+	if !arg {
+		t.FailNow()
+	}
+}
+
+func getKube(t *testing.T, config Config) (sshserver.NetworkConnectionHandler, string) {
+	connectionID := sshserver.GenerateConnectionID()
+	geoipProvider, err := geoip.New(geoip.Config{
+		Provider: geoip.DummyProvider,
+	})
+	must(t, assert.NoError(t, err))
+	collector := metrics.New(geoipProvider)
+	logger := getLogger(t)
+	kr, err := New(
+		net.TCPAddr{
+			IP:   net.ParseIP("127.0.0.1"),
+			Port: 2222,
+			Zone: "",
+		}, connectionID, config, logger,
+		collector.MustCreateCounter("backend_requests", "", ""),
+		collector.MustCreateCounter("backend_failures", "", ""),
+	)
+	must(t, assert.NoError(t, err, "failed to create handler (%v)", err))
+	return kr, connectionID
+}
 
 func TestSuccessfulHandshakeShouldCreatePod(t *testing.T) {
 	t.Parallel()
@@ -34,21 +63,10 @@ func TestSuccessfulHandshakeShouldCreatePod(t *testing.T) {
 					assert.FailNow(t, "failed to create configuration from the current users kubeconfig (%v)", err)
 				}
 
-				connectionID := sshserver.GenerateConnectionID()
-
-				logger := getLogger(t)
-
-				kr, err := New(
-					config, connectionID, net.TCPAddr{
-						IP:   net.ParseIP("127.0.0.1"),
-						Port: 2222,
-						Zone: "",
-					}, logger,
-				)
-				assert.Nil(t, err, "failed to create handler (%v)", err)
+				kr, connectionID := getKube(t, config)
 				defer kr.OnDisconnect()
 
-				_, err = kr.OnHandshakeSuccess("test")
+				_, err := kr.OnHandshakeSuccess("test")
 				assert.Nil(t, err, "failed to create handshake handler (%v)", err)
 
 				k8sConfig := createConnectionConfig(config)
@@ -82,17 +100,7 @@ func TestSingleSessionShouldRunProgram(t *testing.T) {
 
 				config.Pod.Mode = mode
 
-				connectionID := sshserver.GenerateConnectionID()
-				logger := getLogger(t)
-
-				kr, err := New(
-					config, connectionID, net.TCPAddr{
-						IP:   net.ParseIP("127.0.0.1"),
-						Port: 2222,
-						Zone: "",
-					}, logger,
-				)
-				assert.Nil(t, err, "failed to create handler (%v)", err)
+				kr, _ := getKube(t, config)
 				defer kr.OnDisconnect()
 
 				ssh, err := kr.OnHandshakeSuccess("test")
@@ -172,16 +180,7 @@ func TestCommandExecutionShouldReturnStatusCode(t *testing.T) {
 
 			config.Pod.Mode = mode
 
-			connectionID := sshserver.GenerateConnectionID()
-			logger := getLogger(t)
-			kr, err := New(
-				config, connectionID, net.TCPAddr{
-					IP:   net.ParseIP("127.0.0.1"),
-					Port: 2222,
-					Zone: "",
-				}, logger,
-			)
-			assert.Nil(t, err, "failed to create handler (%v)", err)
+			kr, _ := getKube(t, config)
 			defer kr.OnDisconnect()
 
 			ssh, err := kr.OnHandshakeSuccess("test")

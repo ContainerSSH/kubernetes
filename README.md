@@ -20,10 +20,12 @@ As this library is designed to be used exclusively with the [sshserver library](
 
 ```go
 handler, err := kuberun.New(
-    config,
-    connectionID,
     client,
+    connectionID,
+    config,
     logger,
+    backendRequestsCounter,
+    backendFailuresCounter,
 )
 ```
 
@@ -33,6 +35,7 @@ The parameters are as follows:
 - `connectionID` is an opaque ID for the connection.
 - `client` is the `net.TCPAddr` of the client that connected.
 - `logger` is the logger from the [log library](https://github.com/containerssh/log)
+- `backendRequestsCounter` and `backendFailuresCounter` are counters from the [metrics library](https://github.com/containerssh/metrics)
 
 Once the handler is created it will wait for a successful handshake:
 

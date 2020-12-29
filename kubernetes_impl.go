@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/containerssh/log"
+	"github.com/containerssh/metrics"
 	"github.com/containerssh/structutils"
 	core "k8s.io/api/core/v1"
 	kubeErrors "k8s.io/apimachinery/pkg/api/errors"
@@ -29,6 +30,8 @@ import (
 )
 
 type kubeClientFactory struct {
+	backendRequestsMetric metrics.SimpleCounter
+	backendFailuresMetric metrics.SimpleCounter
 }
 
 func (f *kubeClientFactory) get(
@@ -49,11 +52,13 @@ func (f *kubeClientFactory) get(
 	}
 
 	return &kubeClient{
-		client:           cli,
-		restClient:       restClient,
-		config:           config,
-		logger:           logger,
-		connectionConfig: &connectionConfig,
+		client:                cli,
+		restClient:            restClient,
+		config:                config,
+		logger:                logger,
+		connectionConfig:      &connectionConfig,
+		backendRequestsMetric: f.backendRequestsMetric,
+		backendFailuresMetric: f.backendFailuresMetric,
 	}, nil
 }
 
@@ -88,11 +93,13 @@ func createConnectionConfig(config Config) restclient.Config {
 }
 
 type kubeClient struct {
-	config           Config
-	logger           log.Logger
-	client           *kubernetes.Clientset
-	restClient       *restclient.RESTClient
-	connectionConfig *restclient.Config
+	config                Config
+	logger                log.Logger
+	client                *kubernetes.Clientset
+	restClient            *restclient.RESTClient
+	connectionConfig      *restclient.Config
+	backendRequestsMetric metrics.SimpleCounter
+	backendFailuresMetric metrics.SimpleCounter
 }
 
 func (k *kubeClient) createPod(
@@ -111,6 +118,7 @@ func (k *kubeClient) createPod(
 	var lastError error
 loop:
 	for {
+		k.backendRequestsMetric.Increment()
 		pod, lastError = k.client.CoreV1().Pods(k.config.Pod.Metadata.Namespace).Create(
 			ctx,
 			&core.Pod{
@@ -121,16 +129,19 @@ loop:
 		)
 		if lastError == nil {
 			createdPod := &kubePod{
-				pod:              pod,
-				client:           k.client,
-				restClient:       k.restClient,
-				config:           k.config,
-				logger:           k.logger,
-				tty:              tty,
-				connectionConfig: k.connectionConfig,
+				pod:                   pod,
+				client:                k.client,
+				restClient:            k.restClient,
+				config:                k.config,
+				logger:                k.logger,
+				tty:                   tty,
+				connectionConfig:      k.connectionConfig,
+				backendRequestsMetric: k.backendRequestsMetric,
+				backendFailuresMetric: k.backendFailuresMetric,
 			}
 			return createdPod.wait(ctx)
 		}
+		k.backendFailuresMetric.Increment()
 		k.logger.Warninge(
 			fmt.Errorf("failed to create pod, retrying in 10 seconds (%w)", lastError),
 		)
@@ -227,23 +238,27 @@ func (s *sizeQueue) Stop() {
 }
 
 type kubePod struct {
-	config           Config
-	pod              *core.Pod
-	client           *kubernetes.Clientset
-	restClient       *restclient.RESTClient
-	logger           log.Logger
-	tty              *bool
-	connectionConfig *restclient.Config
+	config                Config
+	pod                   *core.Pod
+	client                *kubernetes.Clientset
+	restClient            *restclient.RESTClient
+	logger                log.Logger
+	tty                   *bool
+	connectionConfig      *restclient.Config
+	backendRequestsMetric metrics.SimpleCounter
+	backendFailuresMetric metrics.SimpleCounter
 }
 
 type kubeExec struct {
-	pod               *kubePod
-	exec              remotecommand.Executor
-	terminalSizeQueue pushSizeQueue
-	logger            log.Logger
-	tty               bool
-	pid               int
-	env               map[string]string
+	pod                   *kubePod
+	exec                  remotecommand.Executor
+	terminalSizeQueue     pushSizeQueue
+	logger                log.Logger
+	tty                   bool
+	pid                   int
+	env                   map[string]string
+	backendRequestsMetric metrics.SimpleCounter
+	backendFailuresMetric metrics.SimpleCounter
 }
 
 var cannotSendSignalError = errors.New("cannot send signal")
@@ -284,6 +299,7 @@ func (k *kubeExec) sendSignalToProcess(ctx context.Context, sig string) error {
 	podExec.run(
 		&stdoutBytes, &stderrBytes, stdin, func(exitStatus int) {
 			if exitStatus != 0 {
+				k.backendFailuresMetric.Increment()
 				err = cannotSendSignalError
 				k.logger.Errorf(
 					"cannot send %s signal to pod %s pid %d (%s)",
@@ -362,6 +378,7 @@ func (k *kubeExec) handleStream(stdout io.Writer, stderr io.Writer, stdin io.Rea
 	} else {
 		tty = k.tty
 	}
+	k.backendRequestsMetric.Increment()
 	err := k.exec.Stream(
 		remotecommand.StreamOptions{
 			Stdin:             stdin,
@@ -378,6 +395,7 @@ func (k *kubeExec) handleStream(stdout io.Writer, stderr io.Writer, stdin io.Rea
 		if errors.As(err, exitErr) {
 			onExit(exitErr.Code)
 		} else {
+			k.backendFailuresMetric.Increment()
 			k.pod.logger.Errore(err)
 			onExit(137)
 		}
@@ -413,8 +431,10 @@ func (k *kubePod) attach(_ context.Context) (kubernetesExecution, error) {
 		terminalSizeQueue: &sizeQueue{
 			resizeChan: make(chan remotecommand.TerminalSize),
 		},
-		logger: k.logger,
-		tty:    *k.tty,
+		logger:                k.logger,
+		tty:                   *k.tty,
+		backendRequestsMetric: k.backendRequestsMetric,
+		backendFailuresMetric: k.backendFailuresMetric,
 	}, nil
 }
 
@@ -469,9 +489,11 @@ func (k *kubePod) createExec(
 		terminalSizeQueue: &sizeQueue{
 			resizeChan: make(chan remotecommand.TerminalSize),
 		},
-		logger: k.logger,
-		env:    env,
-		tty:    tty,
+		logger:                k.logger,
+		env:                   env,
+		tty:                   tty,
+		backendRequestsMetric: k.backendRequestsMetric,
+		backendFailuresMetric: k.backendFailuresMetric,
 	}, nil
 }
 
@@ -503,6 +525,7 @@ loop:
 }
 
 func (k *kubePod) wait(ctx context.Context) (kubernetesPod, error) {
+	k.backendRequestsMetric.Increment()
 	fieldSelector := fields.
 		OneTermEqualSelector("metadata.name", k.pod.Name).
 		String()
@@ -532,6 +555,9 @@ func (k *kubePod) wait(ctx context.Context) (kubernetesPod, error) {
 	)
 	if event != nil {
 		k.pod = event.Object.(*core.Pod)
+	}
+	if err != nil {
+		k.backendFailuresMetric.Increment()
 	}
 	return k, err
 }

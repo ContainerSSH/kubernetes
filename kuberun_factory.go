@@ -4,6 +4,7 @@ import (
 	"net"
 
 	"github.com/containerssh/log"
+	"github.com/containerssh/metrics"
 	"github.com/containerssh/sshserver"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -11,7 +12,14 @@ import (
 // NewKubeRun creates a handler based on the legacy "kuberun" configuration.
 // Deprecated: Use New instead.
 //goland:noinspection GoDeprecation,GoUnusedExportedFunction
-func NewKubeRun(oldConfig KubeRunConfig, connectionID string, client net.TCPAddr, logger log.Logger) (sshserver.NetworkConnectionHandler, error) {
+func NewKubeRun(
+	client net.TCPAddr,
+	connectionID string,
+	oldConfig KubeRunConfig,
+	logger log.Logger,
+	backendRequestsMetric metrics.SimpleCounter,
+	backendFailuresMetric metrics.SimpleCounter,
+) (sshserver.NetworkConnectionHandler, error) {
 	logger.Warningf(
 		"You are using the kuberun backend deprecated since ContainerSSH 0.4. This backend will be removed " +
 			"in the future. Please switch to the new kubernetes backend as soon as possible. " +
@@ -39,9 +47,11 @@ func NewKubeRun(oldConfig KubeRunConfig, connectionID string, client net.TCPAddr
 	}
 
 	return New(
-		config,
-		connectionID,
 		client,
+		connectionID,
+		config,
 		logger,
+		backendRequestsMetric,
+		backendFailuresMetric,
 	)
 }

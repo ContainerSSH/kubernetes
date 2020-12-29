@@ -41,12 +41,18 @@ github.com/chzyer/logex v1.1.10/go.mod h1:+Ywpsq7O8HXn0nuIou7OrIPyXbp3wmkHB+jjWR
 github.com/chzyer/readline v0.0.0-20180603132655-2972be24d48e/go.mod h1:nSuG5e5PlCu98SY8svDHJxuZscDgtXS6KTTbou5AhLI=
 github.com/chzyer/test v0.0.0-20180213035817-a1ea475d72b1/go.mod h1:Q3SI9o4m/ZMnBNeIyt5eFwwo7qiLfzFZmjNmxjkiQlU=
 github.com/client9/misspell v0.3.4/go.mod h1:qj6jICC3Q7zFZvVWo7KLAzC3yx5G7kyvSDkc90ppPyw=
+github.com/containerssh/geoip v0.9.3 h1:RDj46uxB3Ew7qoTHCUClBDkqULRZJOLxYf/VqPgEuK8=
+github.com/containerssh/geoip v0.9.3/go.mod h1:8fyg4eUrKKY0FDyS7GofI6OO7UXDoG1icRtVAHb510k=
+github.com/containerssh/http v0.9.4 h1:jgzT8T8hT/gE3PEpdeQl1fC1cm+cAuT7raP8UxEpNPQ=
+github.com/containerssh/http v0.9.4/go.mod h1:KTBEbXRSdllIGOb+O6AURBCG+9vCEyo6AI+JCrI94Cw=
 github.com/containerssh/log v0.9.2 h1:QngZdg3EFvFxthpJY4X2qgVwqSHFTzHJ2kCiQkR7FLQ=
 github.com/containerssh/log v0.9.2/go.mod h1:05pgNm7IgFKt+qbZiUhtuJw2B4j3ynn2vSv5j2JA7hA=
 github.com/containerssh/log v0.9.6 h1:K3/RjrKnTfT1jBe+9PxMdFrZkLSmXQapZD4wcSFGe5w=
 github.com/containerssh/log v0.9.6/go.mod h1:P/tea/If6kzzfqlZdmqNp5SOpD6CD/OvmvcOK+vbweI=
 github.com/containerssh/log v0.9.7 h1:T1FxnEtGMbyJJ7C66dDr6k2RwTnSpVGE5U5apr5pB78=
 github.com/containerssh/log v0.9.7/go.mod h1:NBMzkhOLZ4z45ShSBKQ/Ij6Hqqg15DgOKy6HlSITx0s=
+github.com/containerssh/metrics v0.9.5 h1:VGP/bwoY4UhdP8G9h30QWZIf9P31tl9OURYOoZpKIY4=
+github.com/containerssh/metrics v0.9.5/go.mod h1:vWSPzmiVZznPBFdPnt89cHzWLuEGiExEmeUkTJRDne0=
 github.com/containerssh/service v0.9.0 h1:JUHqiK12tclq7EWQYGRTfgKKw6fhHs0gxlKWTvVwFlQ=
 github.com/containerssh/service v0.9.0/go.mod h1:otAKYF1MWy2eB0K7Sk7YQIECQMTHR3yikbyS1UstGpY=
 github.com/containerssh/sshserver v0.9.14 h1:cIc11NbzF2QfnO5SVSgYH6YTBeIORUd9x0chzvaEfrQ=
@@ -190,6 +196,10 @@ github.com/onsi/ginkgo v1.11.0/go.mod h1:lLunBs/Ym6LB5Z9jYTR76FiuTmxDTDusOGeTQH+
 github.com/onsi/gomega v0.0.0-20170829124025-dcabb60a477c/go.mod h1:C1qb7wdrVGGVU+Z6iS04AVkA3Q65CEZX59MT0QO5uiA=
 github.com/onsi/gomega v1.7.0 h1:XPnZz8VVBHjVsy1vzJmRwIcSwiUO+JFfrv/xGiigmME=
 github.com/onsi/gomega v1.7.0/go.mod h1:ex+gbHU/CVuBBDIJjb2X0qEXbFg53c61hWP/1CpauHY=
+github.com/oschwald/geoip2-golang v1.4.0 h1:5RlrjCgRyIGDz/mBmPfnAF4h8k0IAcRv9PvrpOfz+Ug=
+github.com/oschwald/geoip2-golang v1.4.0/go.mod h1:8QwxJvRImBH+Zl6Aa6MaIcs5YdlZSTKtzmPGzQqi9ng=
+github.com/oschwald/maxminddb-golang v1.6.0 h1:KAJSjdHQ8Kv45nFIbtoLGrGWqHFajOIm7skTyz/+Dls=
+github.com/oschwald/maxminddb-golang v1.6.0/go.mod h1:DUJFucBg2cvqx42YmDa/+xHvb0elJtOm3o4aFQ/nb/w=
 github.com/peterbourgon/diskv v2.0.1+incompatible/go.mod h1:uqqh8zWWbv1HBMNONnaR/tNboyR3/BZd58JJSHlUSCU=
 github.com/pkg/errors v0.9.1 h1:FEBLx1zS214owpjy7qsBeixbURkuhQAwrK5UwLGTwt4=
 github.com/pkg/errors v0.9.1/go.mod h1:bwawxfHBFNV+L2hUp1rHADufV3IMtnDRdf1r5NINEl0=
@@ -308,6 +318,7 @@ golang.org/x/sys v0.0.0-20191001151750-bb3f8db39f24/go.mod h1:h1NjWce9XRLGQEsW7w
 golang.org/x/sys v0.0.0-20191005200804-aed5e4c7ecf9/go.mod h1:h1NjWce9XRLGQEsW7wpKNCjG9DtNlClVuFLEZdDNbEs=
 golang.org/x/sys v0.0.0-20191026070338-33540a1f6037/go.mod h1:h1NjWce9XRLGQEsW7wpKNCjG9DtNlClVuFLEZdDNbEs=
 golang.org/x/sys v0.0.0-20191204072324-ce4227a45e2e/go.mod h1:h1NjWce9XRLGQEsW7wpKNCjG9DtNlClVuFLEZdDNbEs=
+golang.org/x/sys v0.0.0-20191224085550-c709ea063b76/go.mod h1:h1NjWce9XRLGQEsW7wpKNCjG9DtNlClVuFLEZdDNbEs=
 golang.org/x/sys v0.0.0-20191228213918-04cbcbbfeed8/go.mod h1:h1NjWce9XRLGQEsW7wpKNCjG9DtNlClVuFLEZdDNbEs=
 golang.org/x/sys v0.0.0-20200113162924-86b910548bc1/go.mod h1:h1NjWce9XRLGQEsW7wpKNCjG9DtNlClVuFLEZdDNbEs=
 golang.org/x/sys v0.0.0-20200122134326-e047566fdf82/go.mod h1:h1NjWce9XRLGQEsW7wpKNCjG9DtNlClVuFLEZdDNbEs=
