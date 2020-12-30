@@ -1,6 +1,7 @@
 package kubernetes
 
 import (
+	"fmt"
 	"time"
 
 	v1 "k8s.io/api/core/v1"
@@ -45,4 +46,36 @@ type KubeRunPodConfig struct {
 	// DisableCommand is a configuration option to support legacy command disabling from the kuberun config.
 	// See https://containerssh.io/deprecations/kuberun for details.
 	DisableCommand bool `json:"disableCommand" yaml:"disableCommand" comment:"DisableCommand is a configuration option to support legacy command disabling from the kuberun config."`
+}
+
+// Validate validates the KubeRunConfig
+//goland:noinspection GoDeprecation
+func (config KubeRunConfig) Validate() error {
+	if err := config.Connection.Validate(); err != nil {
+		return fmt.Errorf("invalid connection configuration (%w)", err)
+	}
+	if err := config.Pod.Validate(); err != nil {
+		return fmt.Errorf("invalid pod configuration (%w)", err)
+	}
+	return nil
+}
+
+// Validate validates the KubeRunPodConfig
+//goland:noinspection GoDeprecation
+func (config KubeRunPodConfig) Validate() error {
+	if config.Namespace == "" {
+		return fmt.Errorf("no namespace provided")
+	}
+	if len(config.Spec.Containers) == 0 {
+		return fmt.Errorf("invalid pod spec: no containers provided")
+	}
+	for container, spec := range config.Spec.Containers {
+		if spec.Image == "" {
+			return fmt.Errorf("invalid pod spec: empty image name provided for container %d", container)
+		}
+	}
+	if len(config.Spec.Containers) <= config.ConsoleContainerNumber+1 {
+		return fmt.Errorf("invalid console container number %d", config.ConsoleContainerNumber)
+	}
+	return nil
 }

@@ -18,6 +18,10 @@ func New(
 	backendRequestsMetric metrics.SimpleCounter,
 	backendFailuresMetric metrics.SimpleCounter,
 ) (sshserver.NetworkConnectionHandler, error) {
+	if err := config.Validate(); err != nil {
+		return nil, err
+	}
+
 	if config.Pod.DisableAgent {
 		logger.Warningf("You are using the Kubernetes backend without the ContainerSSH Guest Agent. Several features will not work as expected.")
 	}

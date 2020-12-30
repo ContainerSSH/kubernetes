@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.9.3: Added Validate to KubeRun
+
+This release adds a `Validate()` method to the KubeRun configuration.
+
 ## 0.9.2: Added metrics
 
 This release adds integration with the [metrics library](https://github.com/containerssh/metrics). This changes the function signature of the `New` and `NewKubeRun` methods to include the two metrics.

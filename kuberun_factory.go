@@ -34,6 +34,7 @@ func NewKubeRun(
 		ConsoleContainerNumber: oldConfig.Pod.ConsoleContainerNumber,
 		Spec:                   oldConfig.Pod.Spec,
 		Subsystems:             oldConfig.Pod.Subsystems,
+		DisableAgent:           true,
 		IdleCommand:            nil,
 		ShellCommand:           nil,
 		Mode:                   ExecutionModeSession,
