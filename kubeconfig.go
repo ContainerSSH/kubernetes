@@ -11,7 +11,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-func setConfigFromKubeConfig(config *Config) (err error) {
+func (c *Config) SetConfigFromKubeConfig() (err error) {
 	usr, err := user.Current()
 	if err != nil {
 		return err
@@ -35,13 +35,13 @@ func setConfigFromKubeConfig(config *Config) (err error) {
 		return fmt.Errorf("failed to find cluster in kubeConfig")
 	}
 
-	config.Connection.Host = strings.Replace(
+	c.Connection.Host = strings.Replace(
 		kubeConfigCluster.Cluster.Server,
 		"https://",
 		"",
 		1,
 	)
-	if err = configureCertificates(kubeConfigCluster, kubeConfigUser, config); err != nil {
+	if err = configureCertificates(kubeConfigCluster, kubeConfigUser, c); err != nil {
 		return err
 	}
 

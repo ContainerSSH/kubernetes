@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.9.4: Added `SetConfigFromKubeConfig` method to configuration structure
+
+Added a `SetConfigFromKubeConfig()` method to the `kubernetes.Config` struct to make it easer to read the current kubeconfig. It is considered experimental and for testing purposes only.
+
 ## 0.9.3: Added Validate to KubeRun
 
 This release adds a `Validate()` method to the KubeRun configuration.

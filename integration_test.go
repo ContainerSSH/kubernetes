@@ -59,7 +59,7 @@ func TestSuccessfulHandshakeShouldCreatePod(t *testing.T) {
 				config := Config{}
 				structutils.Defaults(&config)
 
-				if err := setConfigFromKubeConfig(&config); err != nil {
+				if err := config.SetConfigFromKubeConfig(); err != nil {
 					assert.FailNow(t, "failed to create configuration from the current users kubeconfig (%v)", err)
 				}
 
@@ -159,7 +159,7 @@ func getKubernetesConfig(t *testing.T) Config {
 		t.FailNow()
 	}
 
-	err = setConfigFromKubeConfig(&config)
+	err = config.SetConfigFromKubeConfig()
 	if !assert.Nil(t, err, "failed to set up kube config (%v)", err) {
 		t.FailNow()
 	}
