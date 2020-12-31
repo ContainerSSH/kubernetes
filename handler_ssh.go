@@ -21,5 +21,6 @@ func (s *sshConnectionHandler) OnSessionChannel(channelID uint64, _ []byte) (
 		channelID:      channelID,
 		networkHandler: s.networkHandler,
 		username:       s.username,
+		env:            map[string]string{},
 	}, nil
 }

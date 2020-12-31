@@ -185,8 +185,13 @@ func (k *kubeClient) getPodConfig(tty *bool, cmd []string, labels map[string]str
 				},
 				cmd...,
 			)
+			podConfig.Spec.Containers[k.config.Pod.ConsoleContainerNumber].Stdin = true
+			podConfig.Spec.Containers[k.config.Pod.ConsoleContainerNumber].StdinOnce = true
 		} else {
 			podConfig.Spec.Containers[k.config.Pod.ConsoleContainerNumber].Command = cmd
+		}
+		if podConfig.Spec.RestartPolicy == "" {
+			podConfig.Spec.RestartPolicy = core.RestartPolicyNever
 		}
 	} else {
 		podConfig.Spec.Containers[k.config.Pod.ConsoleContainerNumber].Command = k.config.Pod.IdleCommand

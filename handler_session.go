@@ -82,6 +82,7 @@ func (c *channelHandler) run(
 
 	var err error
 	var realOnExit func(exitStatus sshserver.ExitStatus)
+	var pod kubernetesPod
 	switch c.networkHandler.config.Pod.Mode {
 	case ExecutionModeConnection:
 		realOnExit, err = c.handleExecModeConnection(ctx, program, onExit)
@@ -89,7 +90,7 @@ func (c *channelHandler) run(
 			return err
 		}
 	case ExecutionModeSession:
-		realOnExit, err = c.handleExecModeSession(ctx, program, onExit)
+		realOnExit, pod, err = c.handleExecModeSession(ctx, program, onExit)
 		if err != nil {
 			return err
 		}
@@ -109,6 +110,15 @@ func (c *channelHandler) run(
 		},
 	)
 
+	if c.pty {
+		err = c.exec.resize(ctx, uint(c.rows), uint(c.columns))
+		if err != nil && c.networkHandler.config.Pod.Mode == ExecutionModeSession && pod != nil {
+			c.removePod(pod)
+			c.networkHandler.logger.Debugf("failed to set initial terminal size (%v)", err)
+			return fmt.Errorf("failed to set terminal size")
+		}
+	}
+
 	return nil
 }
 
@@ -122,9 +132,6 @@ func (c *channelHandler) handleExecModeConnection(
 		return nil, err
 	}
 	c.exec = exec
-	if c.pty {
-		_ = c.exec.resize(ctx, uint(c.rows), uint(c.columns))
-	}
 	return onExit, nil
 }
 
@@ -132,7 +139,7 @@ func (c *channelHandler) handleExecModeSession(
 	ctx context.Context,
 	program []string,
 	onExit func(exitStatus sshserver.ExitStatus),
-) (func(exitStatus sshserver.ExitStatus), error) {
+) (func(exitStatus sshserver.ExitStatus), kubernetesPod, error) {
 	pod, err := c.networkHandler.cli.createPod(
 		ctx,
 		c.networkHandler.labels,
@@ -141,32 +148,26 @@ func (c *channelHandler) handleExecModeSession(
 		program,
 	)
 	if err != nil {
-		return nil, err
-	}
-	removeContainer := func() {
-		ctx, cancelFunc := context.WithTimeout(
-			context.Background(), c.networkHandler.config.Timeouts.PodStop,
-		)
-		defer cancelFunc()
-		_ = pod.remove(ctx)
+		return nil, nil, err
 	}
 	c.exec, err = pod.attach(ctx)
 	if err != nil {
-		removeContainer()
-		return nil, err
-	}
-	if c.pty {
-		err := c.exec.resize(ctx, uint(c.rows), uint(c.columns))
-		if err != nil {
-			removeContainer()
-			return nil, err
-		}
+		c.removePod(pod)
+		return nil, nil, err
 	}
 	onExitWrapper := func(exitStatus sshserver.ExitStatus) {
 		onExit(exitStatus)
-		removeContainer()
+		c.removePod(pod)
 	}
-	return onExitWrapper, nil
+	return onExitWrapper, pod, nil
+}
+
+func (c *channelHandler) removePod(pod kubernetesPod) {
+	ctx, cancelFunc := context.WithTimeout(
+		context.Background(), c.networkHandler.config.Timeouts.PodStop,
+	)
+	defer cancelFunc()
+	_ = pod.remove(ctx)
 }
 
 func (c *channelHandler) OnExecRequest(
@@ -196,7 +197,7 @@ func (c *channelHandler) OnShell(
 	startContext, cancelFunc := context.WithTimeout(context.Background(), c.networkHandler.config.Timeouts.CommandStart)
 	defer cancelFunc()
 
-	return c.run(startContext, nil, stdin, stdout, stderr, onExit)
+	return c.run(startContext, c.networkHandler.config.Pod.ShellCommand, stdin, stdout, stderr, onExit)
 }
 
 func (c *channelHandler) OnSubsystem(

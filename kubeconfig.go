@@ -11,28 +11,71 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-func (c *Config) SetConfigFromKubeConfig() (err error) {
-	usr, err := user.Current()
+// SetConfigFromKubeConfig reads the kubeconfig of the current system user and sets the variables accordingly.
+// This method is meant mainly for testing and not all kubeconfig combinations are supported.
+//goland:noinspection GoDeprecation
+func (config *KubeRunConfig) SetConfigFromKubeConfig() (err error) {
+	kubeConfigUser, kubeConfigCluster, err := getKubeConfigDetails()
 	if err != nil {
 		return err
 	}
-	kubectlConfig, err := readKubeConfig(filepath.Join(usr.HomeDir, ".kube", "config"))
+
+	config.Connection.Host = strings.Replace(
+		kubeConfigCluster.Cluster.Server,
+		"https://",
+		"",
+		1,
+	)
+	if err = config.Connection.configureCertificates(kubeConfigCluster, kubeConfigUser); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+//goland:noinspection GoDeprecation
+func (c *KubeRunConnectionConfig) configureCertificates(
+	kubeConfigCluster *kubeConfigCluster,
+	kubeConfigUser *kubeConfigUser,
+) error {
+	decodedCa, err := base64.StdEncoding.DecodeString(
+		kubeConfigCluster.Cluster.CertificateAuthorityData,
+	)
 	if err != nil {
-		return fmt.Errorf("failed to read kubeconfig (%w)", err)
+		return err
 	}
-	context := extractKubeConfigContext(kubectlConfig, kubectlConfig.CurrentContext)
-	if context == nil {
-		return fmt.Errorf("failed to find current context in kubeConfig")
+	c.CAData = string(decodedCa)
+
+	if kubeConfigUser.User.ClientKeyData != "" {
+		decodedKey, err := base64.StdEncoding.DecodeString(
+			kubeConfigUser.User.ClientKeyData,
+		)
+		if err != nil {
+			return err
+		}
+		c.KeyData = string(decodedKey)
 	}
 
-	kubeConfigUser := extractKubeConfigUser(kubectlConfig, context.Context.User)
-	if kubeConfigUser == nil {
-		return fmt.Errorf("failed to find user in kubeConfig")
+	if kubeConfigUser.User.ClientCertificateData != "" {
+		decodedCert, err := base64.StdEncoding.DecodeString(
+			kubeConfigUser.User.ClientCertificateData,
+		)
+		if err != nil {
+			return err
+		}
+		c.CertData = string(decodedCert)
 	}
 
-	kubeConfigCluster := extractKubeConfigCluster(kubectlConfig, context.Context.Cluster)
-	if kubeConfigCluster == nil {
-		return fmt.Errorf("failed to find cluster in kubeConfig")
+	c.BearerToken = kubeConfigUser.User.Token
+	return nil
+}
+
+// SetConfigFromKubeConfig reads the kubeconfig of the current system user and sets the variables accordingly.
+// This method is meant mainly for testing and not all kubeconfig combinations are supported.
+func (c *Config) SetConfigFromKubeConfig() (err error) {
+	kubeConfigUser, kubeConfigCluster, err := getKubeConfigDetails()
+	if err != nil {
+		return err
 	}
 
 	c.Connection.Host = strings.Replace(
@@ -41,11 +84,73 @@ func (c *Config) SetConfigFromKubeConfig() (err error) {
 		"",
 		1,
 	)
-	if err = configureCertificates(kubeConfigCluster, kubeConfigUser, c); err != nil {
+	if err = c.Connection.configureCertificates(kubeConfigCluster, kubeConfigUser); err != nil {
 		return err
 	}
 
 	return nil
+}
+
+func (c *ConnectionConfig) configureCertificates(
+	kubeConfigCluster *kubeConfigCluster,
+	kubeConfigUser *kubeConfigUser,
+) error {
+	decodedCa, err := base64.StdEncoding.DecodeString(
+		kubeConfigCluster.Cluster.CertificateAuthorityData,
+	)
+	if err != nil {
+		return err
+	}
+	c.CAData = string(decodedCa)
+
+	if kubeConfigUser.User.ClientKeyData != "" {
+		decodedKey, err := base64.StdEncoding.DecodeString(
+			kubeConfigUser.User.ClientKeyData,
+		)
+		if err != nil {
+			return err
+		}
+		c.KeyData = string(decodedKey)
+	}
+
+	if kubeConfigUser.User.ClientCertificateData != "" {
+		decodedCert, err := base64.StdEncoding.DecodeString(
+			kubeConfigUser.User.ClientCertificateData,
+		)
+		if err != nil {
+			return err
+		}
+		c.CertData = string(decodedCert)
+	}
+
+	c.BearerToken = kubeConfigUser.User.Token
+	return nil
+}
+
+func getKubeConfigDetails() (*kubeConfigUser, *kubeConfigCluster, error) {
+	usr, err := user.Current()
+	if err != nil {
+		return nil, nil, err
+	}
+	kubectlConfig, err := readKubeConfig(filepath.Join(usr.HomeDir, ".kube", "config"))
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to read kubeconfig (%w)", err)
+	}
+	context := extractKubeConfigContext(kubectlConfig, kubectlConfig.CurrentContext)
+	if context == nil {
+		return nil, nil, fmt.Errorf("failed to find current context in kubeConfig")
+	}
+
+	kubeConfigUser := extractKubeConfigUser(kubectlConfig, context.Context.User)
+	if kubeConfigUser == nil {
+		return nil, nil, fmt.Errorf("failed to find user in kubeConfig")
+	}
+
+	kubeConfigCluster := extractKubeConfigCluster(kubectlConfig, context.Context.Cluster)
+	if kubeConfigCluster == nil {
+		return nil, nil, fmt.Errorf("failed to find cluster in kubeConfig")
+	}
+	return kubeConfigUser, kubeConfigCluster, nil
 }
 
 func extractKubeConfigContext(kubectlConfig kubeConfig, currentContext string) *kubeConfigContext {
@@ -58,43 +163,6 @@ func extractKubeConfigContext(kubectlConfig kubeConfig, currentContext string) *
 		}
 	}
 	return kubeContext
-}
-
-func configureCertificates(
-	kubeConfigCluster *kubeConfigCluster,
-	kubeConfigUser *kubeConfigUser,
-	config *Config,
-) error {
-	decodedCa, err := base64.StdEncoding.DecodeString(
-		kubeConfigCluster.Cluster.CertificateAuthorityData,
-	)
-	if err != nil {
-		return err
-	}
-	config.Connection.CAData = string(decodedCa)
-
-	if kubeConfigUser.User.ClientKeyData != "" {
-		decodedKey, err := base64.StdEncoding.DecodeString(
-			kubeConfigUser.User.ClientKeyData,
-		)
-		if err != nil {
-			return err
-		}
-		config.Connection.KeyData = string(decodedKey)
-	}
-
-	if kubeConfigUser.User.ClientCertificateData != "" {
-		decodedCert, err := base64.StdEncoding.DecodeString(
-			kubeConfigUser.User.ClientCertificateData,
-		)
-		if err != nil {
-			return err
-		}
-		config.Connection.CertData = string(decodedCert)
-	}
-
-	config.Connection.BearerToken = kubeConfigUser.User.Token
-	return nil
 }
 
 func extractKubeConfigCluster(kubectlConfig kubeConfig, clusterName string) *kubeConfigCluster {

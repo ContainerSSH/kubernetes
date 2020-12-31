@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.9.5: Regression fixes; Added `SetConfigFromKubeConfig` method to the `kuberun` configuration structure
+
+This release fixes a regression where session mode pods would not be handled correctly.
+
+Also, we added a `SetConfigFromKubeConfig()` method to the `kubernetes.KubeRunConfig` struct to make it easer to read the current kubeconfig. It is considered experimental and for testing purposes only.
+
 ## 0.9.4: Added `SetConfigFromKubeConfig` method to configuration structure
 
 Added a `SetConfigFromKubeConfig()` method to the `kubernetes.Config` struct to make it easer to read the current kubeconfig. It is considered experimental and for testing purposes only.
@@ -20,4 +26,4 @@ In this release we are restoring compatibility with ContainerSSH 0.3. The previo
 
 This version is the first release of the more advanced `kubernetes` backend split from the `kuberun` backend. This backend introduces the ability to run several commands using the `exec` mechanism and adds support for the [ContainerSSH Guest Agent](https://github.com/containerssh/agent).
 
-For more details see the [kuberun deprecation notice](https://containerssh.io/deprecations/kuberun)
+For more details see the [kuberun deprecation notice](https://containerssh.io/deprecations/kuberun).
