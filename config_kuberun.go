@@ -74,7 +74,7 @@ func (config KubeRunPodConfig) Validate() error {
 			return fmt.Errorf("invalid pod spec: empty image name provided for container %d", container)
 		}
 	}
-	if len(config.Spec.Containers) <= config.ConsoleContainerNumber+1 {
+	if len(config.Spec.Containers) < config.ConsoleContainerNumber+1 {
 		return fmt.Errorf("invalid console container number %d", config.ConsoleContainerNumber)
 	}
 	return nil

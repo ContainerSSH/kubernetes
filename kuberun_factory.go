@@ -26,10 +26,15 @@ func NewKubeRun(
 			"See https://containerssh.io/deprecations/kuberun for details.",
 	)
 
+	if err := oldConfig.Validate(); err != nil {
+		return nil, err
+	}
+
 	config := Config{}
 	config.Pod = PodConfig{
 		Metadata: metav1.ObjectMeta{
 			Namespace: oldConfig.Pod.Namespace,
+			GenerateName: "containerssh-",
 		},
 		ConsoleContainerNumber: oldConfig.Pod.ConsoleContainerNumber,
 		Spec:                   oldConfig.Pod.Spec,
@@ -42,9 +47,16 @@ func NewKubeRun(
 	}
 	config.Connection = oldConfig.Connection.ConnectionConfig
 	config.Timeouts = TimeoutConfig{
-		HTTP:     oldConfig.Connection.Timeout,
-		PodStart: oldConfig.Timeout,
-		PodStop:  oldConfig.Timeout,
+		PodStart:     oldConfig.Timeout,
+		PodStop:      oldConfig.Timeout,
+		CommandStart: oldConfig.Timeout,
+		Signal:       oldConfig.Timeout,
+		Window:       oldConfig.Timeout,
+		HTTP:         oldConfig.Connection.Timeout,
+	}
+
+	if err := config.Validate(); err != nil {
+		return nil, err
 	}
 
 	return New(

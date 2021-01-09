@@ -11,6 +11,8 @@ import (
 )
 
 type networkHandler struct {
+	sshserver.AbstractNetworkConnectionHandler
+
 	mutex        *sync.Mutex
 	client       net.TCPAddr
 	connectionID string

@@ -15,6 +15,7 @@ import (
 	"github.com/containerssh/structutils"
 	core "k8s.io/api/core/v1"
 	kubeErrors "k8s.io/apimachinery/pkg/api/errors"
+	kubeerrors "k8s.io/apimachinery/pkg/api/errors"
 	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -218,7 +219,7 @@ func (k *kubeClient) getPodConfig(tty *bool, cmd []string, labels map[string]str
 type pushSizeQueue interface {
 	remotecommand.TerminalSizeQueue
 
-	Push(remotecommand.TerminalSize)
+	Push(context.Context, remotecommand.TerminalSize) error
 	Stop()
 }
 
@@ -226,8 +227,13 @@ type sizeQueue struct {
 	resizeChan chan remotecommand.TerminalSize
 }
 
-func (s *sizeQueue) Push(size remotecommand.TerminalSize) {
-	s.resizeChan <- size
+func (s *sizeQueue) Push(ctx context.Context, size remotecommand.TerminalSize) error {
+	select{
+	case <-ctx.Done():
+		return ctx.Err()
+	case s.resizeChan <- size:
+		return nil
+	}
 }
 
 func (s *sizeQueue) Next() *remotecommand.TerminalSize {
@@ -264,12 +270,29 @@ type kubeExec struct {
 	env                   map[string]string
 	backendRequestsMetric metrics.SimpleCounter
 	backendFailuresMetric metrics.SimpleCounter
+	doneChan              chan struct{}
+	exited                bool
+}
+
+func (k *kubeExec) term(ctx context.Context) {
+	_ = k.signal(ctx, "TERM")
+}
+
+func (k *kubeExec) kill() {
+	_ = k.signal(context.Background(), "KILL")
+}
+
+func (k *kubeExec) done() <-chan struct{} {
+	return k.doneChan
 }
 
 var cannotSendSignalError = errors.New("cannot send signal")
 
 func (k *kubeExec) signal(ctx context.Context, sig string) error {
 	if k.pid <= 0 {
+		return cannotSendSignalError
+	}
+	if k.exited {
 		return cannotSendSignalError
 	}
 	return k.sendSignalToProcess(ctx, sig)
@@ -293,7 +316,7 @@ func (k *kubeExec) sendSignalToProcess(ctx context.Context, sig string) error {
 	if err != nil {
 		k.logger.Errorf(
 			"cannot send %s signal to pod %s pid %d (%v)",
-			sig, k.pod.pod.Name, k.pid, err,
+			sig, k.pod.pod.Name, k.pid, err.Error(),
 		)
 		return cannotSendSignalError
 	}
@@ -302,13 +325,16 @@ func (k *kubeExec) sendSignalToProcess(ctx context.Context, sig string) error {
 	stdin, stdinWriter := io.Pipe()
 	done := make(chan struct{})
 	podExec.run(
-		&stdoutBytes, &stderrBytes, stdin, func(exitStatus int) {
+		stdin, &stdoutBytes, &stderrBytes, func() error {
+			return nil
+		},
+		func(exitStatus int) {
 			if exitStatus != 0 {
 				k.backendFailuresMetric.Increment()
 				err = cannotSendSignalError
 				k.logger.Errorf(
 					"cannot send %s signal to pod %s pid %d (%s)",
-					sig, k.pod.pod.Name, k.pid, stderrBytes,
+					sig, k.pod.pod.Name, k.pid, stderrBytes.String(),
 				)
 			}
 			done <- struct{}{}
@@ -319,18 +345,23 @@ func (k *kubeExec) sendSignalToProcess(ctx context.Context, sig string) error {
 	return err
 }
 
-func (k *kubeExec) resize(_ context.Context, height uint, width uint) error {
-	//TODO handle ctx
-	k.terminalSizeQueue.Push(
+func (k *kubeExec) resize(ctx context.Context, height uint, width uint) error {
+	return k.terminalSizeQueue.Push(
+		ctx,
 		remotecommand.TerminalSize{
 			Width:  uint16(width),
 			Height: uint16(height),
 		},
 	)
-	return nil
 }
 
-func (k *kubeExec) run(stdout io.Writer, stderr io.Writer, stdin io.Reader, onExit func(exitStatus int)) {
+func (k *kubeExec) run(
+	stdin io.Reader,
+	stdout io.Writer,
+	stderr io.Writer,
+	closeWrite func() error,
+	onExit func(exitStatus int),
+) {
 	if !k.pod.config.Pod.DisableAgent {
 		var stdinWriter io.WriteCloser
 		var stdoutReader io.ReadCloser
@@ -373,10 +404,16 @@ func (k *kubeExec) run(stdout io.Writer, stderr io.Writer, stdin io.Reader, onEx
 			}()
 		}()
 	}
-	k.handleStream(stdout, stderr, stdin, onExit)
+	k.handleStream(stdin, stdout, stderr, closeWrite, onExit)
 }
 
-func (k *kubeExec) handleStream(stdout io.Writer, stderr io.Writer, stdin io.Reader, onExit func(exitStatus int)) {
+func (k *kubeExec) handleStream(
+	stdin io.Reader,
+	stdout io.Writer,
+	stderr io.Writer,
+	closeWrite func() error,
+	onExit func(exitStatus int),
+) {
 	var tty bool
 	if k.pod.config.Pod.Mode == ExecutionModeSession {
 		tty = *k.pod.tty
@@ -393,7 +430,8 @@ func (k *kubeExec) handleStream(stdout io.Writer, stderr io.Writer, stdin io.Rea
 			TerminalSizeQueue: k.terminalSizeQueue,
 		},
 	)
-
+	k.exited = true
+	_ = closeWrite()
 	k.terminalSizeQueue.Stop()
 	if err != nil {
 		exitErr := &exec.CodeExitError{}
@@ -404,9 +442,57 @@ func (k *kubeExec) handleStream(stdout io.Writer, stderr io.Writer, stdin io.Rea
 			k.pod.logger.Errore(err)
 			onExit(137)
 		}
-	} else {
+	} else if k.pod.config.Pod.Mode == ExecutionModeConnection {
 		onExit(0)
+	} else {
+		ctx, cancel := context.WithTimeout(context.Background(), k.pod.config.Timeouts.PodStop)
+		defer cancel()
+		exitCode, err := k.pod.getExitCode(ctx)
+		if err == nil {
+			onExit(int(exitCode))
+		} else {
+			onExit(137)
+		}
 	}
+}
+
+func (k *kubePod) getExitCode(ctx context.Context) (int32, error) {
+	var pod *core.Pod
+	var lastError error
+	loop:
+	for {
+		pod, lastError = k.client.CoreV1().Pods(k.pod.Namespace).Get(ctx, k.pod.Name, meta.GetOptions{})
+		if lastError == nil {
+			containerStatus := pod.Status.ContainerStatuses[k.config.Pod.ConsoleContainerNumber]
+			if containerStatus.State.Terminated != nil {
+				return containerStatus.State.Terminated.ExitCode, nil
+			}
+			lastError = fmt.Errorf("container has not terminated yet")
+		}
+		if kubeerrors.IsNotFound(lastError) {
+			lastError = fmt.Errorf("failed to fetch pod exit status, already removed (%w)", lastError)
+			k.logger.Errore(
+				lastError,
+			)
+			return 137, lastError
+		}
+		k.logger.Warninge(
+			fmt.Errorf("failed to fetch pod exit status, retrying in 10 seconds (%w)", lastError),
+		)
+		select {
+		case <-ctx.Done():
+			break loop
+		case <-time.After(10 * time.Second):
+		}
+	}
+	if lastError == nil {
+		lastError = fmt.Errorf("timeout")
+	}
+	err := fmt.Errorf("failed to fetch pod exit status, giving up (%w)", lastError)
+	k.logger.Errore(
+		err,
+	)
+	return -1, err
 }
 
 func (k *kubePod) attach(_ context.Context) (kubernetesExecution, error) {
@@ -440,6 +526,7 @@ func (k *kubePod) attach(_ context.Context) (kubernetesExecution, error) {
 		tty:                   *k.tty,
 		backendRequestsMetric: k.backendRequestsMetric,
 		backendFailuresMetric: k.backendFailuresMetric,
+		doneChan:              make(chan struct{}),
 	}, nil
 }
 
@@ -499,6 +586,7 @@ func (k *kubePod) createExec(
 		tty:                   tty,
 		backendRequestsMetric: k.backendRequestsMetric,
 		backendFailuresMetric: k.backendFailuresMetric,
+		doneChan:              make(chan struct{}),
 	}, nil
 }
 
@@ -507,7 +595,7 @@ func (k *kubePod) remove(ctx context.Context) error {
 loop:
 	for {
 		lastError = k.client.CoreV1().Pods(k.pod.Namespace).Delete(ctx, k.pod.Name, meta.DeleteOptions{})
-		if lastError == nil {
+		if lastError == nil || kubeerrors.IsNotFound(lastError) {
 			return nil
 		}
 		k.logger.Warninge(
@@ -523,7 +611,7 @@ loop:
 		lastError = fmt.Errorf("timeout")
 	}
 	err := fmt.Errorf("failed to remove pod, giving up (%w)", lastError)
-	k.logger.Warninge(
+	k.logger.Errore(
 		err,
 	)
 	return err

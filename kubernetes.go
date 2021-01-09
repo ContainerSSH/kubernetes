@@ -51,9 +51,16 @@ type kubernetesExecution interface {
 	signal(ctx context.Context, sig string) error
 	// run runs the process in question.
 	run(
+		stdin io.Reader,
 		stdout io.Writer,
 		stderr io.Writer,
-		stdin io.Reader,
+		closeWrite func() error,
 		onExit func(exitStatus int),
 	)
+	// done returns a channel that is closed when the program has finished.
+	done() <-chan struct{}
+	// term notifies the container or execution of an impending termination.
+	term(ctx context.Context)
+	// kill stops the container or execution.
+	kill()
 }
