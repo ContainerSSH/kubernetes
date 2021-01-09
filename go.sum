@@ -51,6 +51,8 @@ github.com/containerssh/docker v0.9.7 h1:dZvHCefIqjiSVzsXyX9J4729KI8ijI6Ztac0i77
 github.com/containerssh/docker v0.9.7/go.mod h1:TU+01NXK0jRcy+nQM6CUgIrgQL51XgEytmDFd6as1Rs=
 github.com/containerssh/geoip v0.9.3 h1:RDj46uxB3Ew7qoTHCUClBDkqULRZJOLxYf/VqPgEuK8=
 github.com/containerssh/geoip v0.9.3/go.mod h1:8fyg4eUrKKY0FDyS7GofI6OO7UXDoG1icRtVAHb510k=
+github.com/containerssh/geoip v0.9.4 h1:ugkbESJpitdObbSHdYNQfpoFJOlvxwNCX2ZHHnlVJzA=
+github.com/containerssh/geoip v0.9.4/go.mod h1:JxyH+hKj7LfoXWmOMR5lQVrNJCpy42N3GNWSPEguq24=
 github.com/containerssh/http v0.9.4 h1:jgzT8T8hT/gE3PEpdeQl1fC1cm+cAuT7raP8UxEpNPQ=
 github.com/containerssh/http v0.9.4/go.mod h1:KTBEbXRSdllIGOb+O6AURBCG+9vCEyo6AI+JCrI94Cw=
 github.com/containerssh/log v0.9.2 h1:QngZdg3EFvFxthpJY4X2qgVwqSHFTzHJ2kCiQkR7FLQ=
