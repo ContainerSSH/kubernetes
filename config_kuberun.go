@@ -43,6 +43,13 @@ type KubeRunPodConfig struct {
 	// Subsystems contains a map of subsystem names and the executable to launch.
 	Subsystems map[string]string `json:"subsystems" yaml:"subsystems" comment:"Subsystem names and binaries map." default:"{\"sftp\":\"/usr/lib/openssh/sftp-server\"}"`
 
+	// AgentPath contains the path to the ContainerSSH Guest Agent.
+	AgentPath string `json:"agentPath" yaml:"agentPath" default:"/usr/bin/containerssh-agent"`
+	// EnableAgent enables using the ContainerSSH Guest Agent.
+	EnableAgent bool `json:"disableAgent" yaml:"disableAgent"`
+	// ShellCommand is the command used for launching shells. This is required when using the ContainerSSH agent.
+	ShellCommand []string `json:"shellCommand" yaml:"shellCommand" comment:"Run this command as a default shell."`
+
 	// DisableCommand is a configuration option to support legacy command disabling from the kuberun config.
 	// See https://containerssh.io/deprecations/kuberun for details.
 	DisableCommand bool `json:"disableCommand" yaml:"disableCommand" comment:"DisableCommand is a configuration option to support legacy command disabling from the kuberun config."`

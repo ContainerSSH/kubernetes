@@ -87,14 +87,16 @@ func (c *channelHandler) run(
 		return err
 	}
 
-	go c.exec.run(
+	c.exec.run(
 		c.session.Stdin(),
 		c.session.Stdout(),
 		c.session.Stderr(),
 		c.session.CloseWrite,
 		func(exitStatus int) {
 			c.session.ExitStatus(uint32(exitStatus))
-			_ = c.session.Close()
+			if err := c.session.Close(); err != nil {
+				c.networkHandler.logger.Debugf("failed to close session (%v)", err)
+			}
 		},
 	)
 

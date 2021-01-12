@@ -103,11 +103,11 @@ type PodConfig struct {
 
 	// IdleCommand contains the command to run as the first process in the container. Other commands are executed using the "exec" method.
 	IdleCommand []string `json:"idleCommand" yaml:"idleCommand" comment:"Run this command to wait for container exit" default:"[\"/bin/sh\", \"-c\", \"sleep infinity & PID=$!; trap \\\"kill $PID\\\" INT TERM; wait\"]"`
-	// ShellCommand is the command used for launching shells when the container is in ExecutionModeConnection. Ignored in ExecutionModeSession.
+	// ShellCommand is the command used for launching shells when the container. Required in ExecutionModeConnection and when the agent is used.
 	ShellCommand []string `json:"shellCommand" yaml:"shellCommand" comment:"Run this command as a default shell." default:"[\"/bin/bash\"]"`
 	// AgentPath contains the path to the ContainerSSH Guest Agent.
 	AgentPath string `json:"agentPath" yaml:"agentPath" default:"/usr/bin/containerssh-agent"`
-	// DisableAgent enables using the ContainerSSH Guest Agent.
+	// DisableAgent disables using the ContainerSSH Guest Agent.
 	DisableAgent bool `json:"disableAgent" yaml:"disableAgent"`
 	// Subsystems contains a map of subsystem names and the executable to launch.
 	Subsystems map[string]string `json:"subsystems" yaml:"subsystems" comment:"Subsystem names and binaries map." default:"{\"sftp\":\"/usr/lib/openssh/sftp-server\"}"`
@@ -166,6 +166,10 @@ func (c PodConfig) Validate() error {
 				c.Spec.RestartPolicy,
 			)
 		}
+		if !c.DisableAgent && len(c.ShellCommand) == 0 {
+			return fmt.Errorf("shell command is required when using the agent")
+		}
+
 	}
 	return nil
 }

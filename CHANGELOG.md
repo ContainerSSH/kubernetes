@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.9.6: Conformance tests
+
+This release makes use of the comprehensive conformance test introduced in [sshserver](https://github.com/containerssh/sshserver) and fixes a number of issues found in the process.
+
 ## 0.9.5: Regression fixes; Added `SetConfigFromKubeConfig` method to the `kuberun` configuration structure
 
 This release fixes a regression where session mode pods would not be handled correctly.

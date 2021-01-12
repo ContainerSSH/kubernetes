@@ -17,36 +17,38 @@ import (
 )
 
 func TestConformance(t *testing.T) {
-	var factories = map[string]func() (sshserver.NetworkConnectionHandler, error) {
-		"session": func() (sshserver.NetworkConnectionHandler, error) {
+	var factories = map[string]func(logger log.Logger) (sshserver.NetworkConnectionHandler, error){
+		"session": func(logger log.Logger) (sshserver.NetworkConnectionHandler, error) {
 			config, err := getKubernetesConfig()
 			if err != nil {
 				return nil, err
 			}
 			config.Pod.Mode = kubernetes.ExecutionModeSession
-			return getKubernetes(config)
+			return getKubernetes(config, logger)
 		},
-		"connection": func() (sshserver.NetworkConnectionHandler, error) {
+		"connection": func(logger log.Logger) (sshserver.NetworkConnectionHandler, error) {
 			config, err := getKubernetesConfig()
 			if err != nil {
 				return nil, err
 			}
 			config.Pod.Mode = kubernetes.ExecutionModeConnection
-			return getKubernetes(config)
+			return getKubernetes(config, logger)
 		},
-		"kuberun": func() (sshserver.NetworkConnectionHandler, error) {
+		"kuberun": func(logger log.Logger) (sshserver.NetworkConnectionHandler, error) {
 			config, err := getKubeRunConfig()
 			if err != nil {
 				return nil, err
 			}
-			return getKubeRun(config)
+			config.Pod.EnableAgent = true
+			config.Pod.ShellCommand = []string{"/bin/bash"}
+			return getKubeRun(config, logger)
 		},
 	}
 
 	sshserver.RunConformanceTests(t, factories)
 }
 
-func getKubernetes(config kubernetes.Config) (sshserver.NetworkConnectionHandler, error) {
+func getKubernetes(config kubernetes.Config, logger log.Logger) (sshserver.NetworkConnectionHandler, error) {
 	connectionID := sshserver.GenerateConnectionID()
 	geoipProvider, err := geoip.New(geoip.Config{
 		Provider: geoip.DummyProvider,
@@ -55,17 +57,6 @@ func getKubernetes(config kubernetes.Config) (sshserver.NetworkConnectionHandler
 		return nil, err
 	}
 	collector := metrics.New(geoipProvider)
-	logger, err := log.New(
-		log.Config{
-			Level:  log.LevelDebug,
-			Format: log.FormatText,
-		},
-		"kubernetes",
-		os.Stdout,
-	)
-	if err != nil {
-		return nil, err
-	}
 	return kubernetes.New(
 		net.TCPAddr{
 			IP:   net.ParseIP("127.0.0.1"),
@@ -115,7 +106,7 @@ func getKubeRunConfig() (kubernetes.KubeRunConfig, error) {
 }
 
 //goland:noinspection GoDeprecation
-func getKubeRun(config kubernetes.KubeRunConfig) (sshserver.NetworkConnectionHandler, error) {
+func getKubeRun(config kubernetes.KubeRunConfig, logger log.Logger) (sshserver.NetworkConnectionHandler, error) {
 	geoipProvider, err := geoip.New(geoip.Config{
 		Provider: geoip.DummyProvider,
 	})
@@ -123,17 +114,6 @@ func getKubeRun(config kubernetes.KubeRunConfig) (sshserver.NetworkConnectionHan
 		return nil, err
 	}
 	collector := metrics.New(geoipProvider)
-	logger, err := log.New(
-		log.Config{
-			Level:  log.LevelDebug,
-			Format: log.FormatText,
-		},
-		"kuberun",
-		os.Stdout,
-	)
-	if err != nil {
-		return nil, err
-	}
 	//goland:noinspection GoDeprecation
 	return kubernetes.NewKubeRun(
 		net.TCPAddr{

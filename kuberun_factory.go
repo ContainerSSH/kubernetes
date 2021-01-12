@@ -6,6 +6,7 @@ import (
 	"github.com/containerssh/log"
 	"github.com/containerssh/metrics"
 	"github.com/containerssh/sshserver"
+	"github.com/containerssh/structutils"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -31,17 +32,19 @@ func NewKubeRun(
 	}
 
 	config := Config{}
+	structutils.Defaults(&config)
 	config.Pod = PodConfig{
 		Metadata: metav1.ObjectMeta{
-			Namespace: oldConfig.Pod.Namespace,
+			Namespace:    oldConfig.Pod.Namespace,
 			GenerateName: "containerssh-",
 		},
 		ConsoleContainerNumber: oldConfig.Pod.ConsoleContainerNumber,
 		Spec:                   oldConfig.Pod.Spec,
 		Subsystems:             oldConfig.Pod.Subsystems,
-		DisableAgent:           true,
+		DisableAgent:           !oldConfig.Pod.EnableAgent,
+		AgentPath:              oldConfig.Pod.AgentPath,
 		IdleCommand:            nil,
-		ShellCommand:           nil,
+		ShellCommand:           oldConfig.Pod.ShellCommand,
 		Mode:                   ExecutionModeSession,
 		disableCommand:         oldConfig.Pod.DisableCommand,
 	}

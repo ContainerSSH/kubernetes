@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/containerssh/log"
@@ -120,7 +121,7 @@ func (k *kubeClient) createPod(
 loop:
 	for {
 		k.backendRequestsMetric.Increment()
-		pod, lastError = k.client.CoreV1().Pods(k.config.Pod.Metadata.Namespace).Create(
+		pod, lastError = k.client.CoreV1().Pods(podConfig.Metadata.Namespace).Create(
 			ctx,
 			&core.Pod{
 				ObjectMeta: podConfig.Metadata,
@@ -175,6 +176,8 @@ func (k *kubeClient) getPodConfig(tty *bool, cmd []string, labels map[string]str
 		if tty != nil {
 			podConfig.Spec.Containers[k.config.Pod.ConsoleContainerNumber].TTY = *tty
 		}
+		podConfig.Spec.Containers[k.config.Pod.ConsoleContainerNumber].Stdin = true
+		podConfig.Spec.Containers[k.config.Pod.ConsoleContainerNumber].StdinOnce = true
 		if !podConfig.DisableAgent {
 			podConfig.Spec.Containers[k.config.Pod.ConsoleContainerNumber].Command = append(
 				[]string{
@@ -186,8 +189,6 @@ func (k *kubeClient) getPodConfig(tty *bool, cmd []string, labels map[string]str
 				},
 				cmd...,
 			)
-			podConfig.Spec.Containers[k.config.Pod.ConsoleContainerNumber].Stdin = true
-			podConfig.Spec.Containers[k.config.Pod.ConsoleContainerNumber].StdinOnce = true
 		} else {
 			podConfig.Spec.Containers[k.config.Pod.ConsoleContainerNumber].Command = cmd
 		}
@@ -228,7 +229,7 @@ type sizeQueue struct {
 }
 
 func (s *sizeQueue) Push(ctx context.Context, size remotecommand.TerminalSize) error {
-	select{
+	select {
 	case <-ctx.Done():
 		return ctx.Err()
 	case s.resizeChan <- size:
@@ -272,13 +273,28 @@ type kubeExec struct {
 	backendFailuresMetric metrics.SimpleCounter
 	doneChan              chan struct{}
 	exited                bool
+	lock                  *sync.Mutex
 }
 
 func (k *kubeExec) term(ctx context.Context) {
+	k.lock.Lock()
+	defer k.lock.Unlock()
+	select {
+	case <-k.done():
+		return
+	default:
+	}
 	_ = k.signal(ctx, "TERM")
 }
 
 func (k *kubeExec) kill() {
+	k.lock.Lock()
+	defer k.lock.Unlock()
+	select {
+	case <-k.done():
+		return
+	default:
+	}
 	_ = k.signal(context.Background(), "KILL")
 }
 
@@ -355,6 +371,78 @@ func (k *kubeExec) resize(ctx context.Context, height uint, width uint) error {
 	)
 }
 
+type stdinProxyReader struct {
+	backend      io.Reader
+	startWritten bool
+	lock         *sync.Mutex
+	tty          bool
+}
+
+func (s *stdinProxyReader) Read(b []byte) (n int, err error) {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+	if s.startWritten {
+		return s.backend.Read(b)
+	}
+	if len(b) == 0 {
+		return 0, nil
+	}
+	s.startWritten = true
+	if s.tty {
+		b[0] = '\n'
+	}
+	return 1, nil
+}
+
+type stdoutProxyWriter struct {
+	backend    io.Writer
+	pidChannel chan uint32
+	pidRead    bool
+	lock       *sync.Mutex
+	buf        *bytes.Buffer
+	tty        bool
+}
+
+func (s *stdoutProxyWriter) Write(p []byte) (n int, err error) {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+	if s.pidRead {
+		return s.backend.Write(p)
+	}
+	// Read the pid. See https://github.com/containerssh/agent for details.
+	// We need 6 bytes because the first 2 bytes will be \r\n from the --wait function injected in the reader above.
+	if n, err := s.buf.Write(p); err != nil {
+		return n, err
+	}
+	if (s.tty && s.buf.Len() >= 6) || (!s.tty && s.buf.Len() >= 4) {
+		bufferBytes := s.buf.Bytes()
+		s.pidRead = true
+		s.buf = nil
+		var pidBytes []byte
+		if s.tty {
+			pidBytes = bufferBytes[2:6]
+		} else {
+			pidBytes = bufferBytes[:4]
+		}
+		pid := binary.LittleEndian.Uint32(pidBytes)
+		s.pidChannel <- pid
+		var remainingBytes []byte
+		if s.tty {
+			remainingBytes = bufferBytes[6:]
+		} else {
+			remainingBytes = bufferBytes[4:]
+		}
+		if len(remainingBytes) > 0 {
+			_, err := s.backend.Write(remainingBytes)
+			return len(p), err
+		} else {
+			return len(p), nil
+		}
+	} else {
+		return len(p), nil
+	}
+}
+
 func (k *kubeExec) run(
 	stdin io.Reader,
 	stdout io.Writer,
@@ -362,49 +450,29 @@ func (k *kubeExec) run(
 	closeWrite func() error,
 	onExit func(exitStatus int),
 ) {
+	pidChannel := make(chan uint32)
 	if !k.pod.config.Pod.DisableAgent {
-		var stdinWriter io.WriteCloser
-		var stdoutReader io.ReadCloser
-		originalStdin := stdin
-		originalStdout := stdout
-		stdin, stdinWriter = io.Pipe()
-		stdoutReader, stdout = io.Pipe()
-		defer func() {
-			_ = stdinWriter.Close()
-			_ = stdoutReader.Close()
-		}()
-		go func() {
-			if k.pod.config.Pod.Mode == ExecutionModeSession {
-				// Start the program. See https://github.com/containerssh/agent for details.
-				if _, err := stdinWriter.Write([]byte("\000")); err != nil {
-					k.logger.Warningf("failed to start program (%v)", err)
-				}
+		if k.pod.config.Pod.Mode == ExecutionModeSession {
+			stdin = &stdinProxyReader{
+				backend: stdin,
+				lock:    &sync.Mutex{},
+				tty:     k.tty,
 			}
-			// Read the pid. See https://github.com/containerssh/agent for details.
-			pidBytes := make([]byte, 4)
-			if _, err := stdoutReader.Read(pidBytes); err != nil {
-				k.logger.Warningf("failed to read PID from program (%v)", err)
-			} else {
-				k.pid = int(binary.LittleEndian.Uint32(pidBytes))
-			}
-
-			go func() {
-				if _, err := io.Copy(originalStdout, stdoutReader); err != nil {
-					if !errors.Is(err, io.ErrClosedPipe) {
-						k.logger.Warningf("failed to read from stdout (%v)", err)
-					}
-				}
-			}()
-			go func() {
-				if _, err := io.Copy(stdinWriter, originalStdin); err != nil {
-					if !errors.Is(err, io.ErrClosedPipe) {
-						k.logger.Warningf("failed to read from stdin (%v)", err)
-					}
-				}
-			}()
-		}()
+		}
+		stdout = &stdoutProxyWriter{
+			tty:        k.tty,
+			backend:    stdout,
+			lock:       &sync.Mutex{},
+			pidChannel: pidChannel,
+			buf:        &bytes.Buffer{},
+		}
 	}
-	k.handleStream(stdin, stdout, stderr, closeWrite, onExit)
+	go k.handleStream(stdin, stdout, stderr, closeWrite, onExit)
+	if !k.pod.config.Pod.DisableAgent {
+		pid := <-pidChannel
+		k.logger.Debugf("Received PID %d from agent", pid)
+		k.pid = int(pid)
+	}
 }
 
 func (k *kubeExec) handleStream(
@@ -438,29 +506,32 @@ func (k *kubeExec) handleStream(
 		if errors.As(err, exitErr) {
 			onExit(exitErr.Code)
 		} else {
-			k.backendFailuresMetric.Increment()
-			k.pod.logger.Errore(err)
-			onExit(137)
+			k.sendExitCodeToClient(onExit)
 		}
 	} else if k.pod.config.Pod.Mode == ExecutionModeConnection {
 		onExit(0)
 	} else {
-		ctx, cancel := context.WithTimeout(context.Background(), k.pod.config.Timeouts.PodStop)
-		defer cancel()
-		exitCode, err := k.pod.getExitCode(ctx)
-		if err == nil {
-			onExit(int(exitCode))
-		} else {
-			onExit(137)
-		}
+		k.sendExitCodeToClient(onExit)
+	}
+}
+
+func (k *kubeExec) sendExitCodeToClient(onExit func(exitStatus int)) {
+	ctx, cancel := context.WithTimeout(context.Background(), k.pod.config.Timeouts.PodStop)
+	defer cancel()
+	exitCode, err := k.pod.getExitCode(ctx)
+	if err == nil {
+		onExit(int(exitCode))
+	} else {
+		onExit(137)
 	}
 }
 
 func (k *kubePod) getExitCode(ctx context.Context) (int32, error) {
 	var pod *core.Pod
 	var lastError error
-	loop:
+loop:
 	for {
+		retryTimer := 10 * time.Second
 		pod, lastError = k.client.CoreV1().Pods(k.pod.Namespace).Get(ctx, k.pod.Name, meta.GetOptions{})
 		if lastError == nil {
 			containerStatus := pod.Status.ContainerStatuses[k.config.Pod.ConsoleContainerNumber]
@@ -468,21 +539,26 @@ func (k *kubePod) getExitCode(ctx context.Context) (int32, error) {
 				return containerStatus.State.Terminated.ExitCode, nil
 			}
 			lastError = fmt.Errorf("container has not terminated yet")
-		}
-		if kubeerrors.IsNotFound(lastError) {
-			lastError = fmt.Errorf("failed to fetch pod exit status, already removed (%w)", lastError)
-			k.logger.Errore(
-				lastError,
+			k.logger.Debuge(
+				fmt.Errorf("failed to fetch pod exit status, retrying in 10 seconds (%w)", lastError),
 			)
-			return 137, lastError
+			retryTimer = time.Second
+		} else {
+			if kubeerrors.IsNotFound(lastError) {
+				lastError = fmt.Errorf("failed to fetch pod exit status, already removed (%w)", lastError)
+				k.logger.Errore(
+					lastError,
+				)
+				return 137, lastError
+			}
+			k.logger.Warninge(
+				fmt.Errorf("failed to fetch pod exit status, retrying in 10 seconds (%w)", lastError),
+			)
 		}
-		k.logger.Warninge(
-			fmt.Errorf("failed to fetch pod exit status, retrying in 10 seconds (%w)", lastError),
-		)
 		select {
 		case <-ctx.Done():
 			break loop
-		case <-time.After(10 * time.Second):
+		case <-time.After(retryTimer):
 		}
 	}
 	if lastError == nil {
@@ -506,7 +582,7 @@ func (k *kubePod) attach(_ context.Context) (kubernetesExecution, error) {
 			Container: k.pod.Spec.Containers[k.config.Pod.ConsoleContainerNumber].Name,
 			Stdin:     true,
 			Stdout:    true,
-			Stderr:    !*k.tty,
+			Stderr:    true,
 			TTY:       *k.tty,
 		}, scheme.ParameterCodec,
 	)
@@ -527,6 +603,7 @@ func (k *kubePod) attach(_ context.Context) (kubernetesExecution, error) {
 		backendRequestsMetric: k.backendRequestsMetric,
 		backendFailuresMetric: k.backendFailuresMetric,
 		doneChan:              make(chan struct{}),
+		lock:                  &sync.Mutex{},
 	}, nil
 }
 
@@ -587,6 +664,7 @@ func (k *kubePod) createExec(
 		backendRequestsMetric: k.backendRequestsMetric,
 		backendFailuresMetric: k.backendFailuresMetric,
 		doneChan:              make(chan struct{}),
+		lock:                  &sync.Mutex{},
 	}, nil
 }
 
