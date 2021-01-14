@@ -6,7 +6,7 @@ require (
 	github.com/containerssh/geoip v0.9.4
 	github.com/containerssh/log v0.9.9
 	github.com/containerssh/metrics v0.9.6
-	github.com/containerssh/sshserver v0.9.15
+	github.com/containerssh/sshserver v0.9.16
 	github.com/containerssh/structutils v0.9.0
 	github.com/containerssh/unixutils v0.9.0
 	github.com/stretchr/testify v1.6.1
