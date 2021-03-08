@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.9.8: Better JSON and YAML support
+
+Explicitly disabled internal fields in JSON or YAML.
+
 ## 0.9.7: Better logging, proper shutdown handling
 
 This release adds better log messages for administrators as well as proper shutdown handling when a network connection breaks without closing the channels first.

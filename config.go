@@ -34,6 +34,7 @@ func (c Config) Validate() error {
 }
 
 // ConnectionConfig configures the connection to the Kubernetes cluster.
+//goland:noinspection GoVetStructTag
 type ConnectionConfig struct {
 	// Host is a host string, a host:port pair, or a URL to the Kubernetes apiserver. Defaults to kubernetes.default.svc.
 	Host string `json:"host" yaml:"host" comment:"a host string, a host:port pair, or a URL to the base of the apiserver." default:"kubernetes.default.svc"`
@@ -75,7 +76,7 @@ type ConnectionConfig struct {
 
 	// insecure means that the server certificate will not be validated. This is for compatibility reasons only and
 	// should no longer be used.
-	insecure bool
+	insecure bool `json:"-" yaml:"-"`
 }
 
 func (c ConnectionConfig) Validate() error {
@@ -94,6 +95,7 @@ func (c ConnectionConfig) Validate() error {
 }
 
 // PodConfig describes the pod to launch.
+//goland:noinspection GoVetStructTag
 type PodConfig struct {
 	// Metadata configures the pod metadata.
 	Metadata metav1.ObjectMeta `json:"metadata,omitempty" yaml:"metadata,omitempty" default:"{\"namespace\":\"default\",\"generateName\":\"containerssh-\"}"`
@@ -127,7 +129,7 @@ type PodConfig struct {
 
 	// disableCommand is a configuration option to support legacy command disabling from the kuberun config.
 	// See https://containerssh.io/deprecations/kuberun for details.
-	disableCommand bool
+	disableCommand bool `json:"-" yaml:"-"`
 }
 
 // Validate validates the pod configuration.
