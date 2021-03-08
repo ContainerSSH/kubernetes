@@ -77,11 +77,14 @@ func (n *networkHandler) OnHandshakeSuccess(username string) (connection sshserv
 }
 
 func (n *networkHandler) OnDisconnect() {
+	n.mutex.Lock()
+	defer n.mutex.Unlock()
+	if n.disconnected {
+		return
+	}
 	n.disconnected = true
 	ctx, cancelFunc := context.WithTimeout(context.Background(), n.config.Timeouts.PodStop)
 	defer cancelFunc()
-	n.mutex.Lock()
-	defer n.mutex.Unlock()
 	if n.pod != nil {
 		_ = n.pod.remove(ctx)
 	}
