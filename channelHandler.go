@@ -2,16 +2,17 @@ package kubernetes
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"strings"
 
+	"github.com/containerssh/log"
 	"github.com/containerssh/sshserver"
 	"github.com/containerssh/unixutils"
 )
 
 type channelHandler struct {
-	sshserver.AbstractSessionChannelHandler
-
 	channelID      uint64
 	networkHandler *networkHandler
 	username       string
@@ -24,9 +25,20 @@ type channelHandler struct {
 	pod            kubernetesPod
 }
 
+func (c *channelHandler) OnUnsupportedChannelRequest(_ uint64, _ string, _ []byte) {
+}
+
+func (c *channelHandler) OnFailedDecodeChannelRequest(
+	_ uint64,
+	_ string,
+	_ []byte,
+	_ error,
+) {
+}
+
 func (c *channelHandler) OnEnvRequest(_ uint64, name string, value string) error {
 	if c.exec != nil {
-		return fmt.Errorf("program already running")
+		return log.UserMessage(EProgramAlreadyRunning, "program already running", "program already running")
 	}
 	c.env[name] = value
 	return nil
@@ -42,7 +54,7 @@ func (c *channelHandler) OnPtyRequest(
 	_ []byte,
 ) error {
 	if c.exec != nil {
-		return fmt.Errorf("program already running")
+		return log.UserMessage(EProgramAlreadyRunning, "program already running", "program already running")
 	}
 	c.env["TERM"] = term
 	c.pty = true
@@ -81,6 +93,7 @@ func (c *channelHandler) run(
 	case ExecutionModeSession:
 		c.pod, err = c.handleExecModeSession(ctx, program)
 	default:
+		// This should never happen due to validation.
 		return fmt.Errorf("invalid execution mode: %s", c.networkHandler.config.Pod.Mode)
 	}
 	if err != nil {
@@ -94,18 +107,20 @@ func (c *channelHandler) run(
 		c.session.CloseWrite,
 		func(exitStatus int) {
 			c.session.ExitStatus(uint32(exitStatus))
-			if err := c.session.Close(); err != nil {
-				c.networkHandler.logger.Debugf("failed to close session (%v)", err)
+			if err := c.session.Close(); err != nil && !errors.Is(err, io.EOF) {
+				c.networkHandler.logger.Debug(log.Wrap(
+					err,
+					EFailedOutputCloseWriting,
+					"failed to close session",
+				))
 			}
 		},
 	)
 
 	if c.pty {
 		err = c.exec.resize(ctx, uint(c.rows), uint(c.columns))
-		if err != nil && c.networkHandler.config.Pod.Mode == ExecutionModeSession && c.pod != nil {
-			c.removePod(c.pod)
-			c.networkHandler.logger.Debugf("failed to set initial terminal size (%v)", err)
-			return fmt.Errorf("failed to set terminal size")
+		if err != nil {
+			c.networkHandler.logger.Debug(log.Wrap(err, EFailedResize, "Failed to set initial terminal size"))
 		}
 	}
 
@@ -131,6 +146,7 @@ func (c *channelHandler) handleExecModeSession(
 	pod, err := c.networkHandler.cli.createPod(
 		ctx,
 		c.networkHandler.labels,
+		c.networkHandler.annotations,
 		c.env,
 		&c.pty,
 		program,
@@ -159,7 +175,11 @@ func (c *channelHandler) OnExecRequest(
 	program string,
 ) error {
 	if c.networkHandler.config.Pod.disableCommand {
-		return fmt.Errorf("command execution is disabled")
+		return log.UserMessage(
+			EProgramExecutionDisabled,
+			"Command execution is disabled.",
+			"Command execution is disabled.",
+		)
 	}
 	startContext, cancelFunc := context.WithTimeout(
 		context.Background(),
@@ -195,14 +215,18 @@ func (c *channelHandler) OnSubsystem(
 	if binary, ok := c.networkHandler.config.Pod.Subsystems[subsystem]; ok {
 		return c.run(startContext, []string{binary})
 	}
-	return fmt.Errorf("subsystem not supported")
+	return log.UserMessage(ESubsystemNotSupported, "subsystem not supported", "the specified subsystem is not supported (%s)", subsystem)
 }
 
 func (c *channelHandler) OnSignal(_ uint64, signal string) error {
 	c.networkHandler.mutex.Lock()
 	defer c.networkHandler.mutex.Unlock()
 	if c.exec == nil {
-		return fmt.Errorf("program not running")
+		return log.UserMessage(
+			EProgramNotRunning,
+			"Cannot send signal, program is not running.",
+			"Cannot send signal, program is not running.",
+		)
 	}
 	ctx, cancelFunc := context.WithTimeout(
 		context.Background(),
@@ -217,7 +241,11 @@ func (c *channelHandler) OnWindow(_ uint64, columns uint32, rows uint32, _ uint3
 	c.networkHandler.mutex.Lock()
 	defer c.networkHandler.mutex.Unlock()
 	if c.exec == nil {
-		return fmt.Errorf("program not running")
+		return log.UserMessage(
+			EProgramNotRunning,
+			"Cannot resize window, program is not running.",
+			"Cannot resize window, program is not running.",
+		)
 	}
 
 	ctx, cancelFunc := context.WithTimeout(context.Background(), c.networkHandler.config.Timeouts.Window)
@@ -228,31 +256,27 @@ func (c *channelHandler) OnWindow(_ uint64, columns uint32, rows uint32, _ uint3
 
 func (c *channelHandler) OnClose() {
 	if c.exec != nil {
-		select {
-		case <-c.exec.done():
-			return
-		default:
-		}
-	}
-	if c.networkHandler.config.Pod.Mode == ExecutionModeSession {
-		if c.pod != nil {
-			c.removePod(c.pod)
-		}
-	} else if c.exec != nil {
 		c.exec.kill()
+	}
+	pod := c.networkHandler.pod
+	if pod != nil && c.networkHandler.config.Pod.Mode == ExecutionModeSession {
+		ctx, cancel := context.WithTimeout(
+			context.Background(),
+			c.networkHandler.config.Timeouts.PodStop,
+		)
+		defer cancel()
+		_ = pod.remove(ctx)
 	}
 }
 
 func (c *channelHandler) OnShutdown(shutdownContext context.Context) {
 	if c.exec != nil {
 		c.exec.term(shutdownContext)
+		// We wait for the program to exit. This is not needed in session or connection mode, but
+		// later we will need to support persistent containers.
 		select {
 		case <-shutdownContext.Done():
-			if c.networkHandler.config.Pod.Mode == ExecutionModeSession {
-				c.removePod(c.pod)
-			} else {
-				c.exec.kill()
-			}
+			c.exec.kill()
 		case <-c.exec.done():
 		}
 	}

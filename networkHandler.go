@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"strings"
 	"sync"
 
 	"github.com/containerssh/log"
@@ -23,6 +24,8 @@ type networkHandler struct {
 	logger       log.Logger
 	disconnected bool
 	labels       map[string]string
+	annotations  map[string]string
+	done         chan struct{}
 }
 
 func (n *networkHandler) OnAuthPassword(_ string, _ []byte) (response sshserver.AuthResponse, reason error) {
@@ -54,13 +57,15 @@ func (n *networkHandler) OnHandshakeSuccess(username string) (connection sshserv
 	spec.Containers[n.config.Pod.ConsoleContainerNumber].Command = n.config.Pod.IdleCommand
 	n.labels = map[string]string{
 		"containerssh_connection_id": n.connectionID,
-		"containerssh_ip":            n.client.IP.String(),
 		"containerssh_username":      username,
+	}
+	n.annotations = map[string]string{
+		"containerssh_ip": strings.ReplaceAll(n.client.IP.String(), ":", "-"),
 	}
 
 	var err error
 	if n.config.Pod.Mode == ExecutionModeConnection {
-		if n.pod, err = n.cli.createPod(ctx, n.labels, nil, nil, nil); err != nil {
+		if n.pod, err = n.cli.createPod(ctx, n.labels, n.annotations, nil, nil, nil); err != nil {
 			return nil, err
 		}
 	}
@@ -76,9 +81,17 @@ func (n *networkHandler) OnDisconnect() {
 	ctx, cancelFunc := context.WithTimeout(context.Background(), n.config.Timeouts.PodStop)
 	defer cancelFunc()
 	n.mutex.Lock()
+	defer n.mutex.Unlock()
 	if n.pod != nil {
 		_ = n.pod.remove(ctx)
-		n.pod = nil
-		n.mutex.Unlock()
+	}
+	close(n.done)
+}
+
+func (n *networkHandler) OnShutdown(shutdownContext context.Context) {
+	select {
+	case <-shutdownContext.Done():
+		n.OnDisconnect()
+	case <-n.done:
 	}
 }

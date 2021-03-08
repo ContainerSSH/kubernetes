@@ -45,8 +45,6 @@ type ConnectionConfig struct {
 	// Password is the password for basic authentication.
 	Password string `json:"password" yaml:"password" comment:"Password for basic authentication"`
 
-	// Insecure means that the server should be accessed without TLS verification. This is NOT recommended.
-	Insecure bool `json:"insecure" yaml:"insecure" comment:"Server should be accessed without verifying the TLS certificate." default:"false"`
 	// ServerName sets the server name to be set in the SNI and used by the client for TLS verification.
 	ServerName string `json:"serverName" yaml:"serverName" comment:"ServerName is passed to the server for SNI and is used in the client to check server certificates against."`
 
@@ -74,6 +72,10 @@ type ConnectionConfig struct {
 	QPS float32 `json:"qps" yaml:"qps" comment:"QPS indicates the maximum QPS to the master from this client." default:"5"`
 	// Burst indicates the maximum burst for throttle.
 	Burst int `json:"burst" yaml:"burst" comment:"Maximum burst for throttle." default:"10"`
+
+	// insecure means that the server certificate will not be validated. This is for compatibility reasons only and
+	// should no longer be used.
+	insecure bool
 }
 
 func (c ConnectionConfig) Validate() error {
@@ -96,7 +98,7 @@ type PodConfig struct {
 	// Metadata configures the pod metadata.
 	Metadata metav1.ObjectMeta `json:"metadata,omitempty" yaml:"metadata,omitempty" default:"{\"namespace\":\"default\",\"generateName\":\"containerssh-\"}"`
 	// Spec contains the pod specification to launch.
-	Spec v1.PodSpec `json:"podSpec" yaml:"podSpec" comment:"Pod specification to launch" default:"{\"containers\":[{\"name\":\"shell\",\"image\":\"containerssh/containerssh-guest-image\"}]}"`
+	Spec v1.PodSpec `json:"spec" yaml:"spec" comment:"Pod specification to launch" default:"{\"containers\":[{\"name\":\"shell\",\"image\":\"containerssh/containerssh-guest-image\"}]}"`
 
 	// ConsoleContainerNumber specifies the container to attach the running process to. Defaults to 0.
 	ConsoleContainerNumber int `json:"consoleContainerNumber" yaml:"consoleContainerNumber" comment:"Which container to attach the SSH connection to" default:"0"`

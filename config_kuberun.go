@@ -26,6 +26,9 @@ type KubeRunConnectionConfig struct {
 	// ConnectionConfig is the new configuration structure
 	ConnectionConfig `json:",inline" yaml:",inline"`
 
+	// Insecure means that the server should be accessed without TLS verification. This is NOT recommended.
+	Insecure bool `json:"insecure" yaml:"insecure" comment:"Server should be accessed without verifying the TLS certificate." default:"false"`
+
 	// Timeout indicates the timeout for client calls.
 	Timeout time.Duration `json:"timeout" yaml:"timeout" comment:"Timeout"`
 }

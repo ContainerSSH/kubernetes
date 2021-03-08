@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.9.7: Better logging, proper shutdown handling
+
+This release adds better log messages for administrators as well as proper shutdown handling when a network connection breaks without closing the channels first.
+
 ## 0.9.6: Conformance tests
 
 This release makes use of the comprehensive conformance test introduced in [sshserver](https://github.com/containerssh/sshserver) and fixes a number of issues found in the process.
