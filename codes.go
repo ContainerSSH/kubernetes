@@ -44,6 +44,7 @@ const EShuttingDown = "KUBERNETES_POD_SHUTTING_DOWN"
 // it may be the module internally using the exec mechanism to deliver a payload into the pod.
 const MExec = "KUBERNETES_EXEC"
 
+// The ContainerSSH Kubernetes module is resizing the terminal window.
 const MResizing = "KUBERNETES_EXEC_RESIZE"
 
 // The ContainerSSH Kubernetes module failed to resize the console.
