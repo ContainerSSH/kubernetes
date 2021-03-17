@@ -6,7 +6,7 @@ require (
 	github.com/containerssh/geoip v0.9.4
 	github.com/containerssh/log v0.9.13
 	github.com/containerssh/metrics v0.9.8
-	github.com/containerssh/sshserver v0.9.19
+	github.com/containerssh/sshserver v0.9.20
 	github.com/containerssh/structutils v0.9.0
 	github.com/containerssh/unixutils v0.9.0
 	github.com/docker/spdystream v0.1.0 // indirect
@@ -15,8 +15,6 @@ require (
 	github.com/google/gofuzz v1.2.0 // indirect
 	github.com/googleapis/gnostic v0.5.4 // indirect
 	github.com/hashicorp/golang-lru v0.5.4 // indirect
-	github.com/imdario/mergo v0.3.12 // indirect
-	github.com/mattn/go-shellwords v1.0.11 // indirect
 	github.com/stretchr/testify v1.7.0
 	golang.org/x/crypto v0.0.0-20210220033148-5ea612d1eb83 // indirect
 	golang.org/x/net v0.0.0-20210226172049-e18ecbb05110 // indirect
