@@ -24,7 +24,7 @@ pod:
     initcontainers: []
     containers:
       - name: shell
-        image: janoszen/containerssh-image
+        image: containerssh/containerssh-guest-image
         command: []
         args: []
         workingdir: ""

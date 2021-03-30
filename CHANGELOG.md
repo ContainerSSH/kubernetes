@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.9.9: Moving to ContainerSSH agent 
+
+This release is moving to using the ContainerSSH agent as the init process.
+
 ## 0.9.8: Better JSON and YAML support
 
 Explicitly disabled internal fields in JSON or YAML.
