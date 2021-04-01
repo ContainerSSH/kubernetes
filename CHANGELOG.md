@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.0: First stable release
+
+This release tags the first stable version for ContainerSSH 0.4.0.
+
 ## 0.9.9: Moving to ContainerSSH agent 
 
 This release is moving to using the ContainerSSH agent as the init process.
