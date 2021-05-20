@@ -38,24 +38,24 @@ type KubeRunConnectionConfig struct {
 //goland:noinspection GoDeprecation
 type KubeRunPodConfig struct {
 	// Namespace is the namespace to run the pod in.
-	Namespace string `json:"namespace" yaml:"namespace" comment:"Namespace to run the pod in" default:"default"`
+	Namespace string `json:"namespace,omitempty" yaml:"namespace" comment:"Namespace to run the pod in" default:"default"`
 	// ConsoleContainerNumber specifies the container to attach the running process to. Defaults to 0.
-	ConsoleContainerNumber int `json:"consoleContainerNumber" yaml:"consoleContainerNumber" comment:"Which container to attach the SSH connection to" default:"0"`
+	ConsoleContainerNumber int `json:"consoleContainerNumber,omitempty" yaml:"consoleContainerNumber" comment:"Which container to attach the SSH connection to" default:"0"`
 	// Spec contains the pod specification to launch.
-	Spec v1.PodSpec `json:"podSpec" yaml:"podSpec" comment:"Pod specification to launch" default:"{\"containers\":[{\"name\":\"shell\",\"image\":\"containerssh/containerssh-guest-image\"}]}"`
+	Spec v1.PodSpec `json:"podSpec,omitempty" yaml:"podSpec" comment:"Pod specification to launch" default:"{\"containers\":[{\"name\":\"shell\",\"image\":\"containerssh/containerssh-guest-image\"}]}"`
 	// Subsystems contains a map of subsystem names and the executable to launch.
-	Subsystems map[string]string `json:"subsystems" yaml:"subsystems" comment:"Subsystem names and binaries map." default:"{\"sftp\":\"/usr/lib/openssh/sftp-server\"}"`
+	Subsystems map[string]string `json:"subsystems,omitempty" yaml:"subsystems" comment:"Subsystem names and binaries map." default:"{\"sftp\":\"/usr/lib/openssh/sftp-server\"}"`
 
 	// AgentPath contains the path to the ContainerSSH Guest Agent.
-	AgentPath string `json:"agentPath" yaml:"agentPath" default:"/usr/bin/containerssh-agent"`
+	AgentPath string `json:"agentPath,omitempty" yaml:"agentPath" default:"/usr/bin/containerssh-agent"`
 	// EnableAgent enables using the ContainerSSH Guest Agent.
-	EnableAgent bool `json:"disableAgent" yaml:"disableAgent"`
+	EnableAgent bool `json:"disableAgent,omitempty" yaml:"disableAgent"`
 	// ShellCommand is the command used for launching shells. This is required when using the ContainerSSH agent.
-	ShellCommand []string `json:"shellCommand" yaml:"shellCommand" comment:"Run this command as a default shell."`
+	ShellCommand []string `json:"shellCommand,omitempty" yaml:"shellCommand" comment:"Run this command as a default shell."`
 
 	// DisableCommand is a configuration option to support legacy command disabling from the kuberun config.
 	// See https://containerssh.io/deprecations/kuberun for details.
-	DisableCommand bool `json:"disableCommand" yaml:"disableCommand" comment:"DisableCommand is a configuration option to support legacy command disabling from the kuberun config."`
+	DisableCommand bool `json:"disableCommand,omitempty" yaml:"disableCommand" comment:"DisableCommand is a configuration option to support legacy command disabling from the kuberun config."`
 }
 
 // Validate validates the KubeRunConfig
