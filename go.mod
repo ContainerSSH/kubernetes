@@ -5,7 +5,7 @@ go 1.16
 require (
 	github.com/containerssh/geoip v1.0.0
 	github.com/containerssh/http v1.1.0 // indirect
-	github.com/containerssh/log v1.1.3
+	github.com/containerssh/log v1.1.6
 	github.com/containerssh/metrics v1.0.0
 	github.com/containerssh/sshserver v1.0.0
 	github.com/containerssh/structutils v1.0.0
@@ -31,5 +31,4 @@ require (
 	sigs.k8s.io/yaml v1.2.0
 )
 
-// Exclude this package because it got renamed to /moby/ which breaks packages.
-exclude github.com/docker/spdystream v0.2.0
+replace github.com/containerssh/log v1.1.3 => ../log
