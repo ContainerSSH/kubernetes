@@ -5,8 +5,10 @@ import (
 	"os"
 	"time"
 
+	"gopkg.in/yaml.v3"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	k8sYaml "sigs.k8s.io/yaml"
 )
 
 // Config is the base configuration structure for kuberun
@@ -174,6 +176,35 @@ func (c PodConfig) Validate() error {
 			return fmt.Errorf("shell command is required when using the agent")
 		}
 
+	}
+	return nil
+}
+
+// MarshalYAML uses the Kubernetes YAML library to encode the PodConfig instead of the default configuration.
+func (c *PodConfig) MarshalYAML() (interface{}, error) {
+	data, err := k8sYaml.Marshal(c)
+	if err != nil {
+		return nil, err
+	}
+	node := map[string]yaml.Node{}
+	if err := yaml.Unmarshal(data, &node); err != nil {
+		return nil, err
+	}
+	return node, nil
+}
+
+// UnmarshalYAML uses the Kubernetes YAML library to encode the PodConfig instead of the default configuration.
+func (c *PodConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	node := map[string]yaml.Node{}
+	if err := unmarshal(&node); err != nil {
+		return err
+	}
+	data, err := yaml.Marshal(node)
+	if err != nil {
+		return err
+	}
+	if err := k8sYaml.UnmarshalStrict(data, c); err != nil {
+		return err
 	}
 	return nil
 }

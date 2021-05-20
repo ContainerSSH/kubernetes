@@ -13,10 +13,9 @@ import (
 func TestLoadIssue209(t *testing.T) {
 	testFile, err := os.Open("testdata/issue-209.yaml")
 	assert.NoError(t, err)
+	config := kubernetes.Config{}
 	unmarshaller := yaml.NewDecoder(testFile)
 	unmarshaller.KnownFields(true)
-	//goland:noinspection GoDeprecation
-	config := kubernetes.Config{}
 	assert.NoError(t, unmarshaller.Decode(&config))
 
 	assert.Equal(t, "/home/ubuntu", config.Pod.Spec.Volumes[0].HostPath.Path)

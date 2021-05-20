@@ -34,6 +34,7 @@ require (
 	k8s.io/klog/v2 v2.8.0 // indirect
 	k8s.io/utils v0.0.0-20210305010621-2afb4311ab10 // indirect
 	sigs.k8s.io/structured-merge-diff/v4 v4.1.0 // indirect
+	sigs.k8s.io/yaml v1.2.0 // indirect
 )
 
 // Exclude this package because it got renamed to /moby/ which breaks packages.

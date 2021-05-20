@@ -4,7 +4,9 @@ import (
 	"fmt"
 	"time"
 
+	"gopkg.in/yaml.v3"
 	v1 "k8s.io/api/core/v1"
+	k8sYaml "sigs.k8s.io/yaml"
 )
 
 // KubeRunConfig is the legacy configuration structure for the "kuberun" backend.
@@ -58,6 +60,37 @@ type KubeRunPodConfig struct {
 	DisableCommand bool `json:"disableCommand,omitempty" yaml:"disableCommand" comment:"DisableCommand is a configuration option to support legacy command disabling from the kuberun config."`
 }
 
+// MarshalYAML uses the Kubernetes YAML library to encode the PodConfig instead of the default configuration.
+//goland:noinspection GoDeprecation
+func (c *KubeRunPodConfig) MarshalYAML() (interface{}, error) {
+	data, err := k8sYaml.Marshal(c)
+	if err != nil {
+		return nil, err
+	}
+	node := map[string]yaml.Node{}
+	if err := yaml.Unmarshal(data, &node); err != nil {
+		return nil, err
+	}
+	return node, nil
+}
+
+// UnmarshalYAML uses the Kubernetes YAML library to encode the PodConfig instead of the default configuration.
+//goland:noinspection GoDeprecation
+func (c *KubeRunPodConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	node := map[string]yaml.Node{}
+	if err := unmarshal(&node); err != nil {
+		return err
+	}
+	data, err := yaml.Marshal(node)
+	if err != nil {
+		return err
+	}
+	if err := k8sYaml.Unmarshal(data, c); err != nil {
+		return err
+	}
+	return nil
+}
+
 // Validate validates the KubeRunConfig
 //goland:noinspection GoDeprecation
 func (config KubeRunConfig) Validate() error {
@@ -72,20 +105,20 @@ func (config KubeRunConfig) Validate() error {
 
 // Validate validates the KubeRunPodConfig
 //goland:noinspection GoDeprecation
-func (config KubeRunPodConfig) Validate() error {
-	if config.Namespace == "" {
+func (c KubeRunPodConfig) Validate() error {
+	if c.Namespace == "" {
 		return fmt.Errorf("no namespace provided")
 	}
-	if len(config.Spec.Containers) == 0 {
+	if len(c.Spec.Containers) == 0 {
 		return fmt.Errorf("invalid pod spec: no containers provided")
 	}
-	for container, spec := range config.Spec.Containers {
+	for container, spec := range c.Spec.Containers {
 		if spec.Image == "" {
 			return fmt.Errorf("invalid pod spec: empty image name provided for container %d", container)
 		}
 	}
-	if len(config.Spec.Containers) < config.ConsoleContainerNumber+1 {
-		return fmt.Errorf("invalid console container number %d", config.ConsoleContainerNumber)
+	if len(c.Spec.Containers) < c.ConsoleContainerNumber+1 {
+		return fmt.Errorf("invalid console container number %d", c.ConsoleContainerNumber)
 	}
 	return nil
 }
