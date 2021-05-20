@@ -5,7 +5,7 @@ import (
 
 	"github.com/containerssh/log"
 	"github.com/containerssh/metrics"
-	"github.com/containerssh/sshserver"
+	"github.com/containerssh/sshserver/v2"
 	"github.com/containerssh/structutils"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )

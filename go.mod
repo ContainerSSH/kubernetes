@@ -1,4 +1,4 @@
-module github.com/containerssh/kubernetes/v2
+module github.com/containerssh/kubernetes/v3
 
 go 1.16
 
@@ -7,7 +7,7 @@ require (
 	github.com/containerssh/http v1.1.0 // indirect
 	github.com/containerssh/log v1.1.6
 	github.com/containerssh/metrics v1.0.0
-	github.com/containerssh/sshserver v1.0.0
+	github.com/containerssh/sshserver/v2 v2.0.0
 	github.com/containerssh/structutils v1.0.0
 	github.com/containerssh/unixutils v1.0.0
 	github.com/fsnotify/fsnotify v1.4.9 // indirect
@@ -33,3 +33,4 @@ require (
 )
 
 replace github.com/containerssh/log v1.1.3 => ../log
+replace github.com/containerssh/sshserver/v2 v2.0.0 => ../sshserver

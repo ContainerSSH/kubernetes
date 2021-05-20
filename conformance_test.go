@@ -6,13 +6,12 @@ import (
 	"testing"
 
 	"github.com/containerssh/geoip"
+	"github.com/containerssh/kubernetes/v3"
 	"github.com/containerssh/log"
 	"github.com/containerssh/metrics"
-	"github.com/containerssh/sshserver"
+	"github.com/containerssh/sshserver/v2"
 	"github.com/containerssh/structutils"
 	"gopkg.in/yaml.v3"
-
-	"github.com/containerssh/kubernetes/v2"
 )
 
 func TestConformance(t *testing.T) {

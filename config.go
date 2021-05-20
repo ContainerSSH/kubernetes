@@ -129,6 +129,23 @@ type PodConfig struct {
 	//   default command in the container to launch.
 	Mode ExecutionMode `json:"mode,omitempty" yaml:"mode" default:"connection"`
 
+	// ExposeAuthMetadataAsEnv causes the specified metadata entries received from the authentication process to be
+	// exposed as environment variables. They are provided as a map, where the key is the authentication metadata entry
+	// name and the value is the environment variable. The default is to expose no authentication metadata.
+	ExposeAuthMetadataAsEnv map[string]string `json:"exposeAuthMetadataAsEnv" yaml:"exposeAuthMetadataAsEnv"`
+
+	// ExposeAuthMetadataAsLabels causes the specified metadata entries received from the authentication process to be
+	// exposed in the pod labels. They are provided as a map, where the key is the authentication metadata entry name
+	// and the value is the label name. The label name must conform to Kubernetes label name requirements or the pod
+	// will not start. The default is to expose no labels.
+	ExposeAuthMetadataAsLabels map[string]string `json:"exposeAuthMetadataAsLabels" yaml:"exposeAuthMetadataAsLabels""`
+
+	// ExposeAuthMetadataAsAnnotations causes the specified metadata entries received from the authentication process to
+	// be exposed in the pod annotations. They are provided as a map, where the key is the authentication metadata entry
+	// name and the value is the annotation name. The annotation name must conform to Kubernetes annotation name
+	// requirements or the pod will not start. The default is to expose no annotations.
+	ExposeAuthMetadataAsAnnotations map[string]string `json:"exposeAuthMetadataAsAnnotations" yaml:"exposeAuthMetadataAsAnnotations""`
+
 	// disableCommand is a configuration option to support legacy command disabling from the kuberun config.
 	// See https://containerssh.io/deprecations/kuberun for details.
 	disableCommand bool `json:"-" yaml:"-"`

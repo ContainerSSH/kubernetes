@@ -7,7 +7,7 @@ import (
 
 	"github.com/containerssh/log"
 	"github.com/containerssh/metrics"
-	"github.com/containerssh/sshserver"
+	"github.com/containerssh/sshserver/v2"
 )
 
 func New(

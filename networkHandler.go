@@ -8,7 +8,7 @@ import (
 	"sync"
 
 	"github.com/containerssh/log"
-	"github.com/containerssh/sshserver"
+	"github.com/containerssh/sshserver/v2"
 )
 
 type networkHandler struct {
@@ -28,18 +28,18 @@ type networkHandler struct {
 	done         chan struct{}
 }
 
-func (n *networkHandler) OnAuthPassword(_ string, _ []byte) (response sshserver.AuthResponse, reason error) {
-	return sshserver.AuthResponseUnavailable, fmt.Errorf("the backend handler does not support authentication")
+func (n *networkHandler) OnAuthPassword(_ string, _ []byte, _ string) (response sshserver.AuthResponse, metadata map[string]string, reason error) {
+	return sshserver.AuthResponseUnavailable, nil, fmt.Errorf("the backend handler does not support authentication")
 }
 
-func (n *networkHandler) OnAuthPubKey(_ string, _ string) (response sshserver.AuthResponse, reason error) {
-	return sshserver.AuthResponseUnavailable, fmt.Errorf("the backend handler does not support authentication")
+func (n *networkHandler) OnAuthPubKey(_ string, _ string, _ string) (response sshserver.AuthResponse, metadata map[string]string, reason error) {
+	return sshserver.AuthResponseUnavailable, nil, fmt.Errorf("the backend handler does not support authentication")
 }
 
 func (n *networkHandler) OnHandshakeFailed(_ error) {
 }
 
-func (n *networkHandler) OnHandshakeSuccess(username string) (connection sshserver.SSHConnectionHandler, failureReason error) {
+func (n *networkHandler) OnHandshakeSuccess(username string, clientVersion string, metadata map[string]string) (connection sshserver.SSHConnectionHandler, failureReason error) {
 	n.mutex.Lock()
 	if n.pod != nil {
 		n.mutex.Unlock()
@@ -54,18 +54,36 @@ func (n *networkHandler) OnHandshakeSuccess(username string) (connection sshserv
 
 	spec := n.config.Pod.Spec
 
+	env := map[string]string{}
+	for authMetadataName, envName := range n.config.Pod.ExposeAuthMetadataAsEnv {
+		if value, ok := metadata[authMetadataName]; ok {
+			env[envName] = value
+		}
+	}
+
 	spec.Containers[n.config.Pod.ConsoleContainerNumber].Command = n.config.Pod.IdleCommand
 	n.labels = map[string]string{
 		"containerssh_connection_id": n.connectionID,
 		"containerssh_username":      username,
 	}
+	for authMetadataName, labelName := range n.config.Pod.ExposeAuthMetadataAsLabels {
+		if value, ok := metadata[authMetadataName]; ok {
+			n.labels[labelName] = value
+		}
+	}
+
 	n.annotations = map[string]string{
 		"containerssh_ip": strings.ReplaceAll(n.client.IP.String(), ":", "-"),
+	}
+	for authMetadataName, annotationName := range n.config.Pod.ExposeAuthMetadataAsAnnotations {
+		if value, ok := metadata[authMetadataName]; ok {
+			n.annotations[annotationName] = value
+		}
 	}
 
 	var err error
 	if n.config.Pod.Mode == ExecutionModeConnection {
-		if n.pod, err = n.cli.createPod(ctx, n.labels, n.annotations, nil, nil, nil); err != nil {
+		if n.pod, err = n.cli.createPod(ctx, n.labels, n.annotations, env, nil, nil); err != nil {
 			return nil, err
 		}
 	}
@@ -73,6 +91,7 @@ func (n *networkHandler) OnHandshakeSuccess(username string) (connection sshserv
 	return &sshConnectionHandler{
 		networkHandler: n,
 		username:       username,
+		env:            env,
 	}, nil
 }
 
