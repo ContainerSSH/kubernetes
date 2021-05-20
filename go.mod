@@ -1,6 +1,6 @@
 module github.com/containerssh/kubernetes
 
-go 1.14
+go 1.16
 
 require (
 	github.com/containerssh/geoip v1.0.0
