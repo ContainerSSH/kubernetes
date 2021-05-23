@@ -1,4 +1,4 @@
-module github.com/containerssh/kubernetes
+module github.com/containerssh/kubernetes/v2
 
 go 1.16
 
