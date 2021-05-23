@@ -181,7 +181,7 @@ func (c PodConfig) Validate() error {
 }
 
 // MarshalYAML uses the Kubernetes YAML library to encode the PodConfig instead of the default configuration.
-func (c *PodConfig) MarshalYAML() (interface{}, error) {
+func (c PodConfig) MarshalYAML() (interface{}, error) {
 	data, err := k8sYaml.Marshal(c)
 	if err != nil {
 		return nil, err
