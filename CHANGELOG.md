@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.0.1: Fixed bug in previous release
+
+This release fixes the YAML marshalling introduced in the previous release.
+
 ## 2.0.0: Fixing Kubernetes data structure encoding/decoding
 
 This release changes the encoding/decoding process to use the Kubernetes YAML library. This is done because the previously used library would not work with several Kubernetes embedded structures. This change is backwards incompatible as it requires `gopkg.in/yaml.v3` instead `gopkg.in/yaml.v2`.
