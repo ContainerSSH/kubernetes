@@ -1,7 +1,6 @@
 package kubernetes_test
 
 import (
-	"io/ioutil"
 	"net"
 	"os"
 	"testing"
@@ -11,7 +10,7 @@ import (
 	"github.com/containerssh/metrics"
 	"github.com/containerssh/sshserver"
 	"github.com/containerssh/structutils"
-	"gopkg.in/yaml.v2"
+	"gopkg.in/yaml.v3"
 
 	"github.com/containerssh/kubernetes"
 )
@@ -85,15 +84,13 @@ func getKubeRunConfig() (kubernetes.KubeRunConfig, error) {
 		_ = fh.Close()
 	}()
 
-	data, err := ioutil.ReadAll(fh)
-	if err != nil {
-		return kubernetes.KubeRunConfig{}, err
-	}
 	//goland:noinspection GoDeprecation
 	config := kubernetes.KubeRunConfig{}
 	structutils.Defaults(&config)
 	fileConfig := kubernetes.KubeRunConfig{}
-	if err := yaml.Unmarshal(data, &fileConfig); err != nil {
+	decoder := yaml.NewDecoder(fh)
+	decoder.KnownFields(true)
+	if err := decoder.Decode(&fileConfig); err != nil {
 		return config, err
 	}
 	if err := structutils.Merge(&config, &fileConfig); err != nil {
