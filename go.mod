@@ -29,7 +29,7 @@ require (
 	k8s.io/client-go v0.21.1
 	k8s.io/utils v0.0.0-20210517184530-5a248b5acedc // indirect
 	sigs.k8s.io/structured-merge-diff/v4 v4.1.1 // indirect
-	sigs.k8s.io/yaml v1.2.0
+	sigs.k8s.io/yaml v1.3.0
 )
 
 replace github.com/containerssh/log v1.1.3 => ../log
